@@ -99,7 +99,7 @@ resource "aws_instance" "ml_instance" {
     volume_size = 50
   }
   provisioner "remote-exec" {
-    script = "minimal-start-up-script.sh"
+    script = "vm-setup.sh"
     connection {
       type        = "ssh"
       host        = aws_instance.ml_instance.public_ip

@@ -12,9 +12,9 @@ Install the [terraform CLI](https://learn.hashicorp.com/tutorials/terraform/inst
 
 Navigate to the folder containing `main.tf`. Adapt the `variables.tf` file as needed, specifically the `instance-type` and the `location`.
 
-## (Optional) Adapt `minimal-start-up-script.sh` file or additional `remote-exec` block
+## (Optional) Adapt `post-vm-setup-and-manual-steps.sh`
 
-If you want to run arbitrary setup script edit the `minimal-start-up-script.sh`.
+If you want to run your own setup script after the instance is done being created, edit the `post-vm-setup-and-manual-steps.sh` and run it from the git cloned repo.
 
 ## Deploy
 
@@ -25,6 +25,28 @@ Check your deployment with `terraform plan`.
 You can create your instance with `terraform apply`.
 
 This will create a AWS EC2 instance, and save in your local machine a private ssh key (in `.ssh/`), and a series of `.vm-X` files containing identity information for your instance. **Do not delete or modify this files!**
+
+## Currrently manual steps
+
+Some steps are best accomplished manually, until we have a better workstation deployment system).
+
+`gh auth login` to authenticate github cli. Select the ssh option to add anew ssh key for the vm so you can push and access private repos
+
+`git config --global -e` to edit your global config file. Copy your user configuration file from you local machine and paste into the vm's git configuration file.
+
+For VSCode setup, go to Remote Explorer, select Remotes, select the wheel icon and edit the ssh config file. Add this block, adapting your absolute path to your pem key in the .ssh folder in awsvm.
+
+ Note for WSL: I had to manually copy the .pem to another folder on the Windows partition so that VSCode could detect the .pem key. If on Mac just point to the project .ssh pem key created by terraform at `awsvm/.ssh/private_instance_aws.pem`.
+
+```
+Host slickformer-Dev
+    HostName content from .vm-ip
+    IdentityFile "~/slickformer/.ssh/private_instance_aws.pem"
+    LocalForward 8888 localhost:8888
+    LocalForward 6006 localhost:6006
+    IdentitiesOnly yes
+```
+
 
 ## `make` tools
 
