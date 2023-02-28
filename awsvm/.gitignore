@@ -1,0 +1,9 @@
+terraform.tfstate
+terraform.tfstate.backup
+.ssh/
+.terraform.lock.hcl
+.terraform/
+.vm-id
+.vm-ip
+.vm-name
+.vm-region
