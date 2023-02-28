@@ -30,9 +30,24 @@ This will create a AWS EC2 instance, and save in your local machine a private ss
 
 Some steps are best accomplished manually, until we have a better workstation deployment system).
 
-`gh auth login` to authenticate github cli. Select the ssh option to add anew ssh key for the vm so you can push and access private repos
-
 `git config --global -e` to edit your global config file. Copy your user configuration file from you local machine and paste into the vm's git configuration file.
+
+Then, `gh auth login` and `gh repo clone developmentseed/slickformer`. Select the ssh option to add a new ssh key for the vm so you can push and access private repos
+
+```bash
+ubuntu@ip-172-31-27-67:~$ gh auth login
+? What account do you want to log into? GitHub.com
+? What is your preferred protocol for Git operations? SSH
+? Generate a new SSH key to add to your GitHub account? Yes
+? Enter a passphrase for your new SSH key (Optional)
+? Title for your SSH key: GitHub CLI
+? How would you like to authenticate GitHub CLI? Login with a web browser
+ubuntu@ip-172-31-27-67:~$ gh repo clone developmentseed/slickformer
+Cloning into 'slickformer'...
+The authenticity of host 'github.com (140.82.121.3)' can't be established.
+ECDSA key fingerprint is SHA256:p2QAMXNIC1TJYWeIOttrVc98/R1BUFWu3/LiyKgUfQM.
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+```
 
 For VSCode setup, go to Remote Explorer, select Remotes, select the wheel icon and edit the ssh config file. Add this block, adapting your absolute path to your pem key in the .ssh folder in awsvm.
 
