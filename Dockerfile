@@ -1,13 +1,22 @@
 FROM nvidia/cuda:11.3.0-cudnn8-runtime-ubuntu20.04
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Install dependencies
 RUN apt-get update && apt-get install -y \
     curl \
     sudo \
-    wget
+    wget \
+    libxml2 \
+    git
 
 # Set environment variables
 ENV PATH="/root/mambaforge/bin:$PATH"
+
+# Install GitHub CLI
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && apt-get update \
+    && apt-get -y install gh
 
 # Install Conda
 RUN wget https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh \
@@ -15,14 +24,32 @@ RUN wget https://github.com/conda-forge/miniforge/releases/latest/download/Mamba
     && rm Mambaforge-Linux-x86_64.sh \
     && echo 'export PATH="/root/mambaforge/bin:$PATH"' >> ~/.bashrc
 
-# Install Conda packages
-RUN /bin/bash -c "source ~/.bashrc && mamba install -n base -c conda-forge jupyterlab_widgets jupyterlab nb_conda_kernels ipykernel ipywidgets black isort -y"
+# Install Conda packages for jupyter server
+RUN mamba install -n base -c conda-forge jupyterlab_widgets jupyterlab nb_conda_kernels ipykernel ipywidgets black isort -y
 
-# Install GitHub CLI
-RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
-    && apt-get update \
-    && apt-get -y install gh
+##### Install custom Conda packages
+
+# Copy the environment.yaml file to the image
+COPY environment.yaml /
+
+# Create a new conda environment based on the environment.yaml file
+RUN mamba env create -f /environment.yaml --quiet
+
+# Activate the new environment
+SHELL ["conda", "run", "-n", "slickformer", "/bin/bash", "-c"]
+
+# Clone the OneFormer repository to the parent directory of the working directory
+RUN git clone https://github.com/SHI-Labs/OneFormer.git ../OneFormer && \
+    cd ../OneFormer && \
+    git checkout e60a11b && \
+    pip install -r requirements.txt && \
+    cd oneformer/modeling/pixel_decoder/ops && \
+    export CUDA_HOME=$CONDA_PREFIX && \
+    echo 'export CUDA_HOME=$CONDA_PREFIX' >> ~/.bashrc && \
+    sh make.sh
+
+# # Log in to Weights and Biases
+# RUN wandb login
 
 # Set the working directory to /app
 WORKDIR /slickformer
@@ -31,4 +58,4 @@ WORKDIR /slickformer
 VOLUME /slickformer
 
 # Start Jupyter Lab
-CMD ["/bin/bash", "-c", "source ~/.bashrc && jupyter lab --allow-root --no-browser --ip 0.0.0.0 --port 8888 --notebook-dir=/slickformer"]
+CMD ["/bin/bash", "-c", "jupyter lab --allow-root --no-browser --ip 0.0.0.0 --port 8888 --notebook-dir=/slickformer"]
