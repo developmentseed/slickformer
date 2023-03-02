@@ -25,7 +25,7 @@ RUN wget https://github.com/conda-forge/miniforge/releases/latest/download/Mamba
     && echo 'export PATH="/root/mambaforge/bin:$PATH"' >> ~/.bashrc
 
 # Install Conda packages for jupyter server
-RUN mamba install -n base -c conda-forge jupyterlab_widgets jupyterlab ipywidgets black isort -y
+RUN mamba install -n base -c conda-forge jupyterlab_widgets jupyterlab nb_conda_kernels ipywidgets black isort -y
 
 ##### Install custom Conda packages
 
@@ -34,8 +34,6 @@ COPY environment.yaml /
 
 # Create a new conda environment based on the environment.yaml file
 RUN mamba env create -f /environment.yaml --quiet
-
-RUN mamba install -n base -c conda-forge nb_conda_kernels
 
 # Activate the new environment
 SHELL ["conda", "run", "-n", "slickformer", "/bin/bash", "-c"]
