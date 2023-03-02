@@ -26,6 +26,6 @@ variable "ami" {
 variable "instance-type" {
   type        = string
   description = "Instance type to deploy"
-  #default     = "p2.xlarge"
-  default     = "p2.xlarge"
+  default     = "p2.xlarge" #gpu
+  #default     = "m4.xlarge" #cpu
 }

@@ -22,5 +22,5 @@ provider "aws" {
 }
 
 locals {
-  name = "ml-jupyter-${uuid()}"
+  name = "ml-jupyter-slickformer" #testing to see if fixing name results in fewer destroyed resources when isntance type changed
 }

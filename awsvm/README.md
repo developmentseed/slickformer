@@ -28,7 +28,7 @@ This will create a AWS EC2 instance, and save in your local machine a private ss
 
 ## Currrently manual steps
 
-Some steps are best accomplished manually, until we have a better workstation deployment system).
+Some steps are best accomplished manually, until we have a better workstation deployment system.
 
 `git config --global -e` to edit your global config file. Copy your user configuration file from you local machine and paste into the vm's git configuration file.
 
@@ -62,7 +62,6 @@ Host slickformer-Dev
     IdentitiesOnly yes
 ```
 
-
 ## `make` tools
 
 You can now use the set of tools included in the `Makefile`. Adapt this file if needed in case you want to change the remote and local path to copy files into the instance.
@@ -76,3 +75,10 @@ You can now use the set of tools included in the `Makefile`. Adapt this file if 
 When you finish all work associated with this instance make sure to run `terraform destroy`. This will delete the ssh key in `.ssh` and all `.vm-X` files.
 
 **Important: when you destroy your instance, all files and instance state are deleted with it so make sure to back them up to AWS or locally if needed!**
+
+
+## OneFormer Installation with Docker
+
+See the top level README for instructions on installing and running the oneformer dependencies and running a jupyter server with docker.
+
+See these instructions for setting up a VSCode connection to remote vm and docker container running in that vm: https://code.visualstudio.com/docs/containers/ssh
