@@ -38,16 +38,6 @@ RUN mamba env create -f /environment.yaml --quiet
 # Activate the new environment
 SHELL ["conda", "run", "-n", "slickformer", "/bin/bash", "-c"]
 
-# Clone the OneFormer repository to the parent directory of the working directory
-RUN git clone https://github.com/SHI-Labs/OneFormer.git ../OneFormer && \
-    cd ../OneFormer && \
-    git checkout e60a11b && \
-    pip install -r requirements.txt && \
-    cd oneformer/modeling/pixel_decoder/ops && \
-    export CUDA_HOME=$CONDA_PREFIX && \
-    echo 'export CUDA_HOME=$CONDA_PREFIX' >> ~/.bashrc && \
-    sh make.sh
-
 # # Log in to Weights and Biases
 # RUN wandb login
 
