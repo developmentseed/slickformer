@@ -1,4 +1,4 @@
-FROM nvidia/cuda:11.3.0-cudnn8-runtime-ubuntu20.04
+FROM nvidia/cuda:11.7.0-cudnn8-runtime-ubuntu20.04
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Install dependencies
@@ -25,7 +25,7 @@ RUN wget https://github.com/conda-forge/miniforge/releases/latest/download/Mamba
     && echo 'export PATH="/root/mambaforge/bin:$PATH"' >> ~/.bashrc
 
 # Install Conda packages for jupyter server
-RUN mamba install -n base -c conda-forge jupyterlab_widgets jupyterlab nb_conda_kernels ipykernel ipywidgets black isort -y
+RUN mamba install -n base -c conda-forge jupyterlab_widgets jupyterlab ipywidgets black isort -y
 
 ##### Install custom Conda packages
 
@@ -34,6 +34,8 @@ COPY environment.yaml /
 
 # Create a new conda environment based on the environment.yaml file
 RUN mamba env create -f /environment.yaml --quiet
+
+RUN mamba install -n base -c conda-forge nb_conda_kernels
 
 # Activate the new environment
 SHELL ["conda", "run", "-n", "slickformer", "/bin/bash", "-c"]
