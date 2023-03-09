@@ -41,11 +41,20 @@ SHELL ["conda", "run", "-n", "slickformer", "/bin/bash", "-c"]
 # # Log in to Weights and Biases
 # RUN wandb login
 
-# Set the working directory to /app
+# Set the working directory to /slickformer
 WORKDIR /slickformer
 
 # Set the volume to mount the local directory where the Dockerfile is in
 VOLUME /slickformer
+
+# Copy the library file to the image
+COPY ceruleanml /slickformer
+COPY setup.py /slickformer
+
+RUN pip install -e .
+
+# so we can activate envs in vscode remote container connection
+RUN conda init
 
 # Start Jupyter Lab
 CMD ["/bin/bash", "-c", "jupyter lab --allow-root --no-browser --ip 0.0.0.0 --port 8888 --notebook-dir=/slickformer"]
