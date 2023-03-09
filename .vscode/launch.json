@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+    {
+    "name": "make coco dataset no tile",
+    "type": "python",
+    "request": "launch",
+    "python": "/root/mambaforge/envs/slickformer/bin/python",
+    "program": "${file}",
+    "console": "integratedTerminal",
+    "args": [
+    "make-coco-dataset-no-tiles",
+    "data/partition_lists/test_edited.txt",
+    "data/test_coco"
+    ]
+    }
+    ]
+    }
