@@ -6,6 +6,8 @@ dependencies:
     - black
     - boto3
     - cudatoolkit==11.7
+    - dask
+    - distributed
     - gcc
     - graphviz
     - httpx
@@ -14,7 +16,7 @@ dependencies:
     - matplotlib
     - pandas
     - pip
-    - pytorch
+    - pytorch-gpu
     - pytorch-lightning
     - pystac-client
     - rasterio
@@ -28,8 +30,6 @@ dependencies:
     - torchdata
     - torchvision
     - transformers
-    - xbatcher
-    - zen3geo
     - pip:
         - git+https://github.com/cocodataset/panopticapi.git@7bb4655548f98f3fedc07bf37e9040a992b054b0
         - git+https://github.com/waspinator/pycococreator.git@0.2.1
