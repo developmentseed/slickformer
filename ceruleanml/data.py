@@ -505,7 +505,8 @@ class COCOtiler:
         tmp_instance_id = (
             0  # reset after all instances processed so last id is number of instances
         )
-        for instance_path in layer_pths[1:]:
+        for instance_path in sorted(layer_pths)[1:]:
+            assert "Background.png" not in instance_path
             # each label is of form class_instanceid.png
             if "_" not in str(instance_path):
                 raise ValueError(f"The layer {instance_path} is not an instance label.")
@@ -516,6 +517,7 @@ class COCOtiler:
             ):  # hack to handle ambiguous images saved with vals 0 and 255 rather than correct color mapping
                 org_array = org_array.clip(max=1)
                 org_array = np.expand_dims(org_array, axis=2)
+            assert len(org_array.shape)==3
             with rasterio.open(instance_path) as src:
                 profile = src.profile.copy()
                 profile["driver"] = "GTiff"

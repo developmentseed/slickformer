@@ -7,7 +7,7 @@ from typing import List
 
 import click
 import dask
-from dask.distributed import Client, progress
+# from dask.distributed import Client, progress
 
 import ceruleanml.data as data
 
@@ -89,7 +89,7 @@ def make_coco_dataset_with_tiles(
         name (str): the output name of the coco json file. also stored in the coco json metadata to tag the dataset.
         tile_length (str): square length size of the tiles in the tile grid. this can be set to any value. Default is 512.
 
-    Example:
+    Example:COCOtiler
     make_coco_dataset_with_tiles(
         partition_list ="/root/data/partitions/test_scenes.txt",
         aux_data_path ="/root/data/aux_datasets",
@@ -167,35 +167,34 @@ def make_coco_dataset_no_tiles(
     os.makedirs(coco_outdir, exist_ok=True)
     os.makedirs(os.path.join(coco_outdir, "untiled_images"), exist_ok=True)
     coco_tiler = data.COCOtiler(os.path.join(coco_outdir, "untiled_images"))
-    with Client() as client:  # this needs to be commented out to use single threaded for profiling
-        print("Dask client dashboard link: ", client.dashboard_link)
-        coco_outputs = []
-        with open(partition_list) as file:
-            for scene_index, line in enumerate(file):
-                scene_path = Path(line.rstrip())
-                layer_dirs = list(map(str, scene_path.glob("*png")))
-                delayed_tuple = dask.delayed(
-                    data.fetch_sentinel1_reprojection_parameters
-                )(scene_path.name)
-                scene_data_tuple = (
-                    delayed_tuple[1],
-                    delayed_tuple[2],
-                    delayed_tuple[3],
-                )
-                coco_output = dask.delayed(
-                    coco_tiler.create_coco_from_photopea_layers_no_tile
-                )(
-                    scene_index,
-                    scene_data_tuple,
-                    layer_dirs,
-                )
-                coco_outputs.append(coco_output)
+#    with Client() as client:  # this needs to be commented out to use single threaded for profiling
+#        print("Dask client dashboard link: ", client.dashboard_link)
+    coco_outputs = []
+    with open(partition_list) as file:
+        for scene_index, line in enumerate(file):
+            scene_path = Path(line.rstrip())
+            layer_dirs = list(map(str, scene_path.glob("*png")))
+            delayed_tuple = dask.delayed(
+                data.fetch_sentinel1_reprojection_parameters
+            )(scene_path.name)
+            scene_data_tuple = (
+                delayed_tuple[1],
+                delayed_tuple[2],
+                delayed_tuple[3],
+            )
+            coco_output = dask.delayed(
+                coco_tiler.create_coco_from_photopea_layers_no_tile
+            )(
+                scene_index,
+                scene_data_tuple,
+                layer_dirs,
+            )
+            coco_outputs.append(coco_output)
         final_coco_output = make_coco_metadata(name=name)
-        # when we create a distributed client
-        coco_outputs = dask.persist(coco_outputs)
-        # start computation in the background
-        progress(coco_outputs)  # watch progress
-        coco_outputs = client.compute(coco_outputs, sync=True)
+        #progress(coco_outputs)  # watch progress
+        #coco_outputs = client.compute(coco_outputs, sync=True)
+        dask.config.set(scheduler='synchronous')
+        coco_outputs = dask.compute(coco_outputs)
         for co in coco_outputs:
             final_coco_output["images"].extend(co["images"])
             final_coco_output["annotations"].extend(co["annotations"])
