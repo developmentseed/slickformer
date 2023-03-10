@@ -6,12 +6,15 @@
     "type": "python",
     "request": "launch",
     "python": "/root/mambaforge/envs/slickformer/bin/python",
-    "program": "${file}",
+    "program": "/slickformer/ceruleanml/cli.py",
     "console": "integratedTerminal",
+    "justMyCode": false,
     "args": [
-    "make-coco-dataset-no-tiles",
-    "data/partition_lists/test_edited.txt",
-    "data/test_coco"
+    "make-coco-dataset",
+    "data/partition_lists/test_scenes.txt",
+    "data/aux_datasets",
+    "/slickformer/data/partitions/test_tiles_context_0",
+    "0",
     ]
     }
     ]
