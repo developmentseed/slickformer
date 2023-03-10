@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+    {
+    "name": "make coco dataset no tile",
+    "type": "python",
+    "request": "launch",
+    "python": "/root/mambaforge/envs/slickformer/bin/python",
+    "program": "/slickformer/ceruleanml/cli.py",
+    "console": "integratedTerminal",
+    "justMyCode": false,
+    "args": [
+    "make-coco-dataset",
+    "data/partition_lists/test_scenes.txt",
+    "data/aux_datasets",
+    "/slickformer/data/partitions/test_tiles_context_0",
+    "0",
+    ]
+    }
+    ]
+    }

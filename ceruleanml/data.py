@@ -4,6 +4,7 @@ import time
 import zipfile
 from datetime import datetime
 from io import BytesIO
+from math import ceil
 from pathlib import Path
 from shutil import copy
 from typing import Any, List, Optional, Tuple
@@ -24,53 +25,21 @@ from rasterio.plot import reshape_as_image, reshape_as_raster
 from rasterio.vrt import WarpedVRT
 from rio_tiler.io import COGReader
 
-# TODO single source of class map truth
-# Hard Neg is overloaded with overlays but they shouldn't be exported during annotation
-# Hard Neg is just a class that we will use to measure performance gains metrics
-class_mapping_photopea = {
-    "Infrastructure": (0, 0, 255),
-    "Natural Seep": (0, 255, 0),
-    "Coincident Vessel": (255, 0, 0),
-    "Recent Vessel": (255, 255, 0),
-    "Old Vessel": (255, 0, 255),
-    "Ambiguous": (255, 255, 255),
-    "Hard Negatives": (0, 255, 255),
+# Single Source of Truth for categorical classes
+# and their respective Human Readable (hr) text and Color Codes (cc) photopea designations
+class_dict = {
+    "background": {"hr": "Background", "cc": (0, 255, 255)},
+    "infra_slick": {"hr": "Infrastructure", "cc": (0, 0, 255)},
+    "natural_seep": {"hr": "Natural Seep", "cc": (0, 255, 0)},
+    "coincident_vessel": {"hr": "Coincident Vessel", "cc": (255, 0, 0)},
+    "recent_vessel": {"hr": "Recent Vessel", "cc": (255, 255, 0)},
+    "old_vessel": {"hr": "Old Vessel", "cc": (255, 0, 255)},
+    "ambiguous": {"hr": "Ambiguous", "cc": (255, 255, 255)},
 }
+class_list = list(class_dict.keys())
 
-class_mapping_coco = {
-    "Infrastructure": 1,
-    "Natural Seep": 2,
-    "Coincident Vessel": 3,
-    "Recent Vessel": 4,
-    "Old Vessel": 5,
-    "Ambiguous": 6,
-    "Hard Negatives": 0,
-}
-
-class_mapping_coco_inv = {
-    1: "Infrastructure",
-    2: "Natural Seep",
-    3: "Coincident Vessel",
-    4: "Recent Vessel",
-    5: "Old Vessel",
-    6: "Ambiguous",
-    0: "Hard Negatives",
-}
-
-
-def pad_l_total(chip_l: int, img_l: int):
-    """Find the total amount of padding that needs to occur
-    for an array.
-
-    Args:
-        chip_l (int): The length of the tile
-        img_l (int): The big image length that needs to be tiled
-
-    Returns:
-        float: The average padding that should occur on either side.
-            This is a float, and should be rounded up or down on either side.
-    """
-    return chip_l * (1 - (img_l / chip_l - img_l // chip_l))
+# TODO Hard Neg is overloaded with overlays but they shouldn't be exported during annotation
+# TODO Hard Neg is just a class that we will use to measure performance gains metrics
 
 
 def reshape_split(image: np.ndarray, kernel_size: tuple):
@@ -92,23 +61,21 @@ def reshape_split(image: np.ndarray, kernel_size: tuple):
         image = np.expand_dims(image, axis=2)
     img_height, img_width, channels = image.shape
     tile_height, tile_width = kernel_size
-    pad_height = pad_l_total(tile_height, img_height)
-    pad_width = pad_l_total(tile_width, img_width)
-    pad_height_up = int(np.floor(pad_height / 2))
-    pad_height_down = int(np.ceil(pad_height / 2))
-    pad_width_up = int(np.floor(pad_width / 2))
-    pad_width_down = int(np.ceil(pad_width / 2))
+    num_tiles_high = ceil(img_height / tile_height)
+    num_tiles_wide = ceil(img_width / tile_width)
+    pad_height = num_tiles_high * tile_height - img_height
+    pad_width = num_tiles_wide * tile_width - img_width
     image_padded = np.pad(
         image,
-        ((pad_height_up, pad_height_down), (pad_width_up, pad_width_down), (0, 0)),
+        ((0, pad_height), (0, pad_width), (0, 0)),
         mode="constant",
         constant_values=0,
     )
     img_height, img_width, channels = image_padded.shape
     tiled_array = image_padded.reshape(
-        img_height // tile_height,
+        num_tiles_high,
         tile_height,
-        img_width // tile_width,
+        num_tiles_wide,
         tile_width,
         channels,
     )
@@ -141,15 +108,14 @@ def save_tiles_from_3d(tiled_arr: np.ndarray, img_fname: str, outdir: str):
             unique integer id at the end, starting from zero.
         outdir (str): The directory to save img tiles.
     """
-    tiles_n, _, _, _ = tiled_arr.shape
-    for i in range(tiles_n):
+    for i, tile in enumerate(tiled_arr):
         fname = os.path.join(
             outdir,
             os.path.basename(os.path.dirname(img_fname))
             + f"_vv-image_local_tile_{i}.tif",
         )
-        skio.imsave(fname, tiled_arr[i], "tifffile", False)  # don't check contrast
-    print(f"finished saving {tiles_n} images")
+        skio.imsave(fname, tile, "tifffile", False)  # don't check contrast
+    print("finished saving images")
 
 
 def copy_whole_images(img_list: List, outdir: str):
@@ -184,9 +150,9 @@ def rgbalpha_to_binary(arr: np.ndarray, r: int, g: int, b: int):
 
     Args:
         arr (np.ndarray): The 3D numpy ndarray
-        r (int): red integer id from class_mapping_photopea
-        g (int): green integer id from class_mapping_photopea
-        b (int): blue integer id from class_mapping_photopea
+        r (int): red integer id from the photopea Color Codes in class_dict
+        g (int): green integer id from the photopea Color Codes in class_dict
+        b (int): blue integer id from the photopea Color Codes in class_dict
 
     Returns:
         np.ndarray: the binary array
@@ -196,45 +162,39 @@ def rgbalpha_to_binary(arr: np.ndarray, r: int, g: int, b: int):
     )
 
 
-def is_layer_of_class(arr, r, g, b):
+def is_layer_of_class(arr, category):
     """Checks class of a label layer from photopea
 
     Args:
         arr (np.ndarray): The 3D numpy ndarray
-        r (int): red integer id from class_mapping_photopea
-        g (int): green integer id from class_mapping_photopea
-        b (int): blue integer id from class_mapping_photopea
+        category (str): item from class_dict
 
     Returns:
         bool: True if any of the class is in the layer.
     """
-    return rgbalpha_to_binary(arr, r, g, b).any()
+    return rgbalpha_to_binary(arr, *class_dict[category]["cc"]).any()
 
 
 def get_layer_cls(
     arr: np.ndarray,
-    class_mapping_photopea: dict = class_mapping_photopea,
-    class_mapping_coco: dict = class_mapping_coco,
 ):
-    """Returns the integer class id of the instance layer.
+    """Returns the str class of the instance layer.
 
     Args:
         arr (np.ndarray): A 3D array with 4 channels
-        class_mapping_photopea (dict): The class mapping from RGB values to
-        class_mapping_coco (dict): _description_
 
     Raises:
         ValueError: raises an error if the array isn't formatted as it should
             be from photopea label export.
 
     Returns:
-        _type_: integer id for the class as defined by the class_mapping_coco dict.
+        _type_: str keyword for for the class as defined by the class_dict.
     """
     if len(arr.shape) == 3 and arr.shape[-1] == 4:
-        for category in class_mapping_photopea.keys():
-            if is_layer_of_class(arr, *class_mapping_photopea[category]):
-                return class_mapping_coco[category]
-        return 0  # no category matches, all background label
+        for category in class_list:
+            if is_layer_of_class(arr, category):
+                return category
+        return "background"  # no category matches, all background label
     else:
         raise ValueError(
             "Check the array to make sure it is a label array with 4 channels for rgb alpha."
@@ -275,7 +235,7 @@ class COCOtiler:
             scene_id (str): The originating scene_id for the background and annotations.
             layer_paths (List[str]): List of path in a scene folder corresponding to Background.png, Layer 1.png, etc. Order matters.
             aux_datasets (List[str], optional): List of paths pointing to auxiliary vector files to include in tiles OR ship_density. 55km is the range by default. Defaults to [].
-            tile_length (int): length of the tile. 512 results in more 512x512 tiles, 1024 results in less 1024x1024, etc.
+            tile_length (int): length of the tile. 512 results in more 512x512 tiles, 1024 results in less 1024x1024, etc. A value of 0 means use full scene without tiling.
 
 
         Raises:
@@ -293,7 +253,9 @@ class COCOtiler:
         )  # TODO s1_image_shape can be divided by a resample factor to resample with vrt_dst.read
 
         # saving vv image tiles (Background layer)
-        img_path = layer_paths[0]
+        img_path = sorted(layer_paths)[0]
+        if "Background" not in str(img_path):  # its the vv image
+            raise ValueError(f"The layer {img_path} is not a VV image.")
         # opening Background.png and assigning native res projection info
         with rasterio.open(img_path) as src:
             profile = src.profile.copy()
@@ -342,15 +304,15 @@ class COCOtiler:
 
             # append as channels to arr
             arr = np.concatenate([arr, aux_dataset_channels], axis=2)
-        start = time.time()
-        tiled_arr = reshape_split(arr, (tile_length, tile_length))
-        print(f"Number of seconds for tiling: {time.time() - start}")
-        if "Background" in str(img_path):  # its the vv image
+        if tile_length:
             start = time.time()
-            save_tiles_from_3d(tiled_arr, img_path, self.img_dir)
-            print(f"Number of seconds for img tile saving: {time.time() - start}")
+            tiled_arr = reshape_split(arr, (tile_length, tile_length))
+            print(f"Number of seconds for tiling: {time.time() - start}")
         else:
-            raise ValueError(f"The layer {img_path} is not a VV image.")
+            tiled_arr = [arr]
+        start = time.time()
+        save_tiles_from_3d(tiled_arr, img_path, self.img_dir)
+        print(f"Number of seconds for img tile saving: {time.time() - start}")
         return (
             len(tiled_arr),
             s1_image_shape,
@@ -371,7 +333,7 @@ class COCOtiler:
         scene_index: int,
         scene_data_tuple: tuple,
         layer_pths: List[str],
-        tile_length: int,
+        tile_length: int = 0,
     ):
         """Creates a COCO JSON with annotations compressed in RLE format.
 
@@ -383,7 +345,7 @@ class COCOtiler:
             scene_index (int): Unique id for the scene that can be used to set a unique global tile id.
             scene_data_tuple (tuple): Tuple containing data from save_background_images that's needed to reproject, assign tile fnames.
             layer_pths (List[str]): List of path in a scene folder corresponding to Background.png, Layer 1.png, etc. Order matters.
-            tile_length (int): length of the tile. 512 results in more 512x512 tiles, 1024 results in less 1024x1024, etc.
+            tile_length (int): length of the tile. 512 results in more 512x512 tiles, 1024 results in less 1024x1024, etc. A value of 0 means use the whole image without tiling
 
         Raises:
             ValueError: Errors if the path to the first file in layer_pths doesn't contain "Background"
@@ -401,7 +363,7 @@ class COCOtiler:
         # 200 used because no scene has more than 200 tiles, guarantees global tile ids unique
         global_tile_ids = [200 * scene_index + i for i in list(range(n_tiles))]
         # TODO handle strings and specifically iterate over instance tiff files in a more explicit way
-        for instance_path in layer_pths[1:]:
+        for instance_path in sorted(layer_pths)[1:]:
             # each label is of form class_instanceid.png
             if "_" not in str(instance_path):
                 raise ValueError(f"The layer {instance_path} is not an instance label.")
@@ -412,6 +374,7 @@ class COCOtiler:
             ):  # hack to handle ambiguous images saved with vals 0 and 255 rather than correct color mapping
                 org_array = org_array.clip(max=1)
                 org_array = np.expand_dims(org_array, axis=2)
+            assert len(org_array.shape) == 3
             with rasterio.open(instance_path) as src:
                 profile = src.profile.copy()
                 profile["driver"] = "GTiff"
@@ -438,10 +401,12 @@ class COCOtiler:
                             )
 
                             assert arr.shape[1:] == s1_image_shape
-
-            tiled_arr = reshape_split(reshape_as_image(arr), (tile_length, tile_length))
+            arr = reshape_as_image(arr)
+            if tile_length:
+                tiled_arr = reshape_split(arr, (tile_length, tile_length))
+            else:
+                tiled_arr = [arr]
             # saving annotations
-            tiles_n, _, _, _ = tiled_arr.shape
             ainfo_iinfo_tuples = []
             for local_tile_id, global_tile_id in enumerate(global_tile_ids):
                 # we reassign instance ids after all have been saved in the
@@ -455,7 +420,6 @@ class COCOtiler:
                     tmp_instance_id,
                     instance_path,
                     instance_tile,
-                    tile_length,
                 )
                 ainfo_iinfo_tuples.append(result)
             for tup in ainfo_iinfo_tuples:
@@ -474,90 +438,6 @@ class COCOtiler:
                     )
                     coco_output["annotations"].append(annotation_info)
         print(f"Number of seconds for coco_output creation: {time.time() - start}")
-        return coco_output
-
-    def create_coco_from_photopea_layers_no_tile(
-        self, scene_index: str, scene_data_tuple: tuple, layer_pths: List[str]
-    ):
-        """Saves a COCO JSON with annotations compressed in RLE format, without tiling and referring to the
-            original Background.png images.
-
-        The COCO JSON is amended to add two keys for the full scene, referring to the folder name containing the
-        photopea layers. This should correspond to the original Sentinel-1 VV geotiff filename so that the
-        coordinates can be associated.
-
-        Args:
-            layer_pths (list[str]): List of path in a scene folder corresponding to Background.png, Layer 1.png, etc. Order matters.
-            coco_output (dict): the dict defining the metadata and data container for the dataset that will be created
-            coco_name (str, optional): the filename of the coco json. Defaults to "instances_slick_train_v2.json".
-
-        Raises:
-            ValueError: Errors if the path to the first file in layer_pths doesn't contain "Background"
-            ValueError: Errors if a path to a label file in layer_pths doesn't contain "Layer"
-        """
-        (
-            s1_image_shape,
-            s1_gcps,
-            s1_crs,
-        ) = scene_data_tuple
-        # Make sure scene id is the same and we have reproj params
-        coco_output: dict = {"images": [], "annotations": []}  # type: ignore
-        tmp_instance_id = (
-            0  # reset after all instances processed so last id is number of instances
-        )
-        for instance_path in layer_pths[1:]:
-            # each label is of form class_instanceid.png
-            if "_" not in str(instance_path):
-                raise ValueError(f"The layer {instance_path} is not an instance label.")
-
-            org_array = skio.imread(instance_path)
-            if (
-                len(org_array.shape) == 2 and "ambiguous" in instance_path
-            ):  # hack to handle ambiguous images saved with vals 0 and 255 rather than correct color mapping
-                org_array = org_array.clip(max=1)
-                org_array = np.expand_dims(org_array, axis=2)
-            with rasterio.open(instance_path) as src:
-                profile = src.profile.copy()
-                profile["driver"] = "GTiff"
-                if org_array.shape[-1] == 1 and "ambiguous" in instance_path:
-                    profile["count"] = 1
-                else:
-                    profile["count"] = 4
-                profile["crs"] = s1_crs
-                profile["gcps"] = s1_gcps
-
-                with MemoryFile() as mem:
-                    with mem.open(**profile) as m:
-                        m.write(reshape_as_raster(org_array))
-                        gcps_transform = transform.from_gcps(s1_gcps)
-                        with WarpedVRT(
-                            m,
-                            src_crs=s1_crs,
-                            src_transform=gcps_transform,
-                            add_alpha=False,
-                        ) as vrt_dst:
-                            # arr is (c, h, w)
-                            arr = vrt_dst.read(
-                                out_shape=(vrt_dst.count, *s1_image_shape)
-                            )
-                            assert arr.shape[1:] == s1_image_shape
-            img_name = os.path.join(os.path.dirname(instance_path), "Background.png")
-            annotation_info, image_info = get_annotation_and_image_info(
-                scene_index,
-                scene_index,
-                scene_index,
-                tmp_instance_id,
-                instance_path,
-                reshape_as_image(arr),
-                img_name,
-            )
-            if annotation_info is not None:
-                coco_output["annotations"].append(annotation_info)
-            image_info["file_name"] = os.path.join(
-                os.path.dirname(instance_path), "Background.png"
-            )
-            coco_output["images"].append(image_info)
-            tmp_instance_id += 1
         return coco_output
 
     def save_coco_output(
@@ -789,7 +669,6 @@ def get_annotation_and_image_info(
     instance_id,
     instance_path,
     arr,
-    tile_length,
     template_str="_vv-image_local_tile_",
     img_name="",
 ):
@@ -802,7 +681,12 @@ def get_annotation_and_image_info(
     else:
         tile_fname = img_name
     image_info = pycococreatortools.create_image_info(
-        global_tile_id, tile_fname, (tile_length, tile_length)
+        global_tile_id,
+        tile_fname,
+        (
+            arr.shape[1],
+            arr.shape[0],
+        ),  # Get the pixel width then height, ignoring channel
     )
     image_info.update(
         {
@@ -812,32 +696,36 @@ def get_annotation_and_image_info(
     )
     if arr.shape[-1] == 1 and "ambiguous" in instance_path:
         if 1 in np.unique(arr):
-            class_id = 6
+            category = "ambiguous"
             category_info = {
-                "id": class_id,
+                "id": class_list.index(category),
                 "is_crowd": True,
             }  # forces compressed RLE format
         else:
-            class_id = 0
-            category_info = {"id": class_id, "is_crowd": False}
+            category = "background"
+            category_info = {"id": class_list.index(category), "is_crowd": False}
         binary_mask = arr[:, :, -1]
     else:
-        class_id = get_layer_cls(arr, class_mapping_photopea, class_mapping_coco)
-        if class_id != 0:
+        category = get_layer_cls(arr)
+        if category == "background":
+            category_info = {"id": class_list.index(category), "is_crowd": False}
+        else:
             category_info = {
-                "id": class_id,
+                "id": class_list.index(category),
                 "is_crowd": True,
             }  # forces compressed RLE format
-        else:
-            category_info = {"id": class_id, "is_crowd": False}
-        r, g, b = class_mapping_photopea[class_mapping_coco_inv[class_id]]
-        binary_mask = rgbalpha_to_binary(arr, r, g, b).astype(np.uint8)
+        binary_mask = rgbalpha_to_binary(arr, *class_dict[category]["cc"]).astype(
+            np.uint8
+        )
     annotation_info = pycococreatortools.create_annotation_info(
         instance_id,
         global_tile_id,
         category_info,
         binary_mask,
-        binary_mask.shape,
+        (
+            binary_mask.shape[1],
+            binary_mask.shape[0],
+        ),  # There's a bug in create_annotation_info that swaps the mask dimensions!!!
         tolerance=0,
     )
     return (annotation_info, image_info)

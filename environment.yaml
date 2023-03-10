@@ -2,17 +2,36 @@ name: slickformer
 channels:
     - conda-forge
 dependencies:
-    - python=3.8
-    - pip=22.0.4
-    - cudatoolkit-dev=11.3
-    - opencv=4.4.0
-    - iopath<0.1.10,>=0.1.7
-    - hydra-core>=1.1
-    - omegaconf>=2.1
-    - wandb=0.13.10
+    - albumentations
     - black
+    - boto3
+    - cudatoolkit==11.7
+    - dask
+    - distributed
+    - gcc
+    - graphviz
+    - httpx
+    - hydra-core
+    - ipykernel
+    - matplotlib
+    - pandas
+    - pip
+    - pytorch-gpu
+    - pytorch-lightning
+    - pystac-client
+    - rasterio
+    - rioxarray
+    - scikit-image
+    - scikit-learn
+    - scipy
+    - seaborn
+    - tensorboard
+    - timm
+    - torchdata
+    - torchvision
+    - transformers
     - pip:
-      - git+https://github.com/cocodataset/panopticapi.git@7bb4655548f98f3fedc07bf37e9040a992b054b0
-      - torch==1.10.1
-      - torchvision==0.11.2
-      - https://dl.fbaipublicfiles.com/detectron2/wheels/cu113/torch1.10/detectron2-0.6%2Bcu113-cp38-cp38-linux_x86_64.whl
+        - git+https://github.com/cocodataset/panopticapi.git@7bb4655548f98f3fedc07bf37e9040a992b054b0
+        - git+https://github.com/waspinator/pycococreator.git@0.2.1
+        - rio-cogeo
+        - rio-tiler-pds
