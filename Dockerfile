@@ -7,7 +7,11 @@ RUN apt-get update && apt-get install -y \
     sudo \
     wget \
     libxml2 \
-    git
+    git \
+    fmpeg \
+    libsm6 \
+    libxext6
+
 
 # Set environment variables
 ENV PATH="/root/mambaforge/bin:$PATH"
