@@ -1,5 +1,21 @@
 # slickformer
 
+### Running dataset creation
+
+First, you'll need to sync the data from s3.
+
+```
+export AWS_PROFILE=devseed
+aws s3 sync s3://slickformer/cv2-training/ data/cv2/
+aws s3 sync s3://slickformer/aux_datasets/ data/aux_datasets/
+aws s3 sync s3://slickformer/partition_lists/ data/partition_lists/
+```
+
+then, from the docker container with the slickformer conda environment activated, run
+
+`bash scripts make_datasets.sh`
+
+This will create the train, validation, and test sets without tiling, and extract the annotations from the Photopea image layers into a COCO JSON.
 
 ### Running the jupyter server locally with slickformer dependencies
 
@@ -12,7 +28,7 @@ docker run -it --rm \
     -v $HOME/.aws:/root/.aws \
     -v "$(pwd)":/slickformer \
     -p 8888:8888 \
-    -e AWS_PROFILE=devseed \
+    -e AWS_PROFILE=skytruth \
     --gpus all slickserver
 ```
 
@@ -58,20 +74,3 @@ docker tag slickserver-pl:latest YourAccountID.dkr.ecr.eu-central-1.amazonaws.co
 
 docker push YourAccountID.dkr.ecr.eu-central-1.amazonaws.com/slickformer
 ```
-
-### Running dataset creation
-
-First, you'll need to sync the data from s3.
-
-```
-aws s3 sync s3://slickformer/cv2-training/ data/cv2/
-aws s3 sync s3://slickformer/aux_datasets/ data/aux_datasets/
-aws s3 sync s3://slickformer/partition_lists/ data/partition_lists/
-```
-
-then, from the docker container with the slickformer conda environment activated, run
-
-`bash scripts make_datasets.sh`
-
-This will create the train, validation, and test sets without tiling, and extract the annotations from the Photopea image layers into a COCO JSON.
-
