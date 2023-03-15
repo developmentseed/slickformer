@@ -114,46 +114,9 @@ def cm_f1(
     return cm, f1
 
 
-def get_cm_for_torchscript_model_unet(
-    dls,
-    model,
-    save_path,
-    semantic_mask_conf_thresh,
-    num_classes,
-    normalize=None,
-    class_names=None,
-    title="Confusion Matrix",
-):
-    """
-    the torchscript model when it is loaded operates on batches, not individual images
-    this doesn't support eval on negative samples if they are in the dls,
-    since val masks don't exist with neg samples. need to be constructed with np.zeros
-
-    returns cm and f1 score
-    """
-    val_arrs = []
-    class_preds = []
-    for batch_tuple in tqdm(dls.valid):
-        semantic_masks_batch = batch_tuple[1].cpu().detach().numpy()
-        class_pred_batch = model(batch_tuple[0].cpu())
-        probs, classes = logits_to_classes(class_pred_batch)
-        t = apply_conf_threshold(probs, classes, semantic_mask_conf_thresh)
-        class_pred_batch = t.cpu().detach().numpy()
-        val_arrs.extend(semantic_masks_batch)
-        class_preds.append(class_pred_batch)
-    return cm_f1(
-        val_arrs,
-        class_preds,
-        num_classes,
-        save_path,
-        normalize,
-        class_names,
-        title=title,
-    )
-
 
 def get_cm_for_torchscript_model_mrcnn(
-    valid_ds,
+    coco_json_path,
     model,
     save_path,
     mask_conf_threshold,
@@ -174,13 +137,20 @@ def get_cm_for_torchscript_model_mrcnn(
 
     returns cm and f1 score
     """
-    val_arrs = []
-    class_preds = []
-    for record in tqdm(valid_ds):
+    with open(coco_json, 'r') as f:
+        annotations = json.load(f)
+    
+    for im_record in annotations['images']:
+        img_input = [torch.Tensor(np.moveaxis(record.img, 2, 0)) / 255]
+        _, pred_list = model(img_input)
         masks_gt = []
-        for i, label_id in enumerate(record.detection.label_ids):
-            masks_gt.append(record.detection.mask_array.data[i] * label_id)
-        # for 6 class model this needs to be mapping process TODO
+        for anno in annotations['annotations']:
+            if im_record['id'] == anno['image_id']:
+                segment = anno['segmentation']
+                # from the source, order is height then width https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocotools/_mask.pyx#L288
+                rle = maskUtils.frPyObjects(segment, anno['height'], anno['width'])
+                masks_gt.append(maskUtils.decode(rle)*anno['category_id'])
+
         semantic_masks_gt = np.max(np.stack(masks_gt), axis=0)
 
         _, pred_list = model([torch.Tensor(np.moveaxis(record.img, 2, 0)) / 255])
