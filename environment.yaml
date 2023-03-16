@@ -13,6 +13,8 @@ dependencies:
     - httpx
     - hydra-core
     - ipykernel
+    - jpeg
+    - libpng
     - matplotlib
     - opencv
     - pandas
@@ -28,9 +30,12 @@ dependencies:
     - seaborn
     - tensorboard
     - timm
+    - pytorch-gpu
     - torchdata
     - torchvision
     - transformers
+    - xbatcher
+    - zen3geo
     - pip:
         - git+https://github.com/cocodataset/panopticapi.git@7bb4655548f98f3fedc07bf37e9040a992b054b0
         - git+https://github.com/waspinator/pycococreator.git@0.2.1

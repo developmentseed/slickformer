@@ -8,10 +8,9 @@ RUN apt-get update && apt-get install -y \
     wget \
     libxml2 \
     git \
-    fmpeg \
-    libsm6 \
-    libxext6
-
+    libjpeg-turbo8 \
+    libgl1 -y
+# for some reason the last two above don't get installed by conda with opencv
 
 # Set environment variables
 ENV PATH="/root/mambaforge/bin:$PATH"
@@ -35,6 +34,10 @@ RUN mamba install -n base -c conda-forge jupyterlab_widgets jupyterlab nb_conda_
 
 # Copy the environment.yaml file to the image
 COPY environment.yaml /
+
+# allows installation if cuda not on host, vague explanation 
+# here: https://conda-forge.org/docs/maintainer/knowledge_base.html#cuda-builds
+ENV CONDA_OVERRIDE_CUDA=11.7
 
 # Create a new conda environment based on the environment.yaml file
 RUN mamba env create -f /environment.yaml --quiet

@@ -7,7 +7,7 @@ from matplotlib.patches import Patch
 from ceruleanml import data_creation
 
 
-def plot_scene_wth_annotations(img_path: str, mask_arrs: list, annos: dict):
+def plot_scene_annotations(img_path: str, mask_arrs: list, annos: dict):
     """Plots a scene with a simple legend based on the 6 class COCO json.
 
     Args:
