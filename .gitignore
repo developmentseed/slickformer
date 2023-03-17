@@ -1,3 +1,7 @@
 data/
 notebooks/.ipynb_checkpoints/
 notebooks/Untitled.ipynb
+ceruleanml.egg-info/
+ceruleanml/__pycache__/
+notebooks/cats_panoptic.png
+notebooks/test_im_w_slicks.png
