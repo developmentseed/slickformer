@@ -101,10 +101,11 @@ def apply_conf_threshold_masks(pred_dict, mask_conf_threshold, size):
             high_conf_class_mask = torch.where(high_conf_class_mask.bool(), classes, 0)
             high_conf_classes.append(high_conf_class_mask.squeeze())
         if len(high_conf_classes) > 1:
-            stacked_arr = torch.dstack(high_conf_classes)
             # TODO flag as to be addressed in stitching solution
             # this gets more complicated with 6 class model
-            return torch.max(stacked_arr, axis=2)[0]  # we only want the value array
+            # TODO changed this from stacking from past func def to plot masks individually
+            # could have downstream impacts on other eval code?
+            return high_conf_classes
         else:
             return high_conf_class_mask.squeeze()
     else:

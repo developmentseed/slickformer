@@ -18,15 +18,15 @@ def decode_masks(scene_id: str, annotations:dict):
     """
     scene_coco_record = [im_record for im_record in annotations['images'] if im_record['big_image_original_fname'] == scene_id+".tif"][0]
     mask_arrs = []
-    annos = []
+    mask_cat_ids = []
     for anno in annotations['annotations']:
         if scene_coco_record['id'] == anno['image_id']:
             segment = anno['segmentation']
             # from the source, order is height then width https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocotools/_mask.pyx#L288
             rle = maskUtils.frPyObjects(segment, anno['height'], anno['width'])
             mask_arrs.append(maskUtils.decode(rle)*anno['category_id'])
-            annos.append(anno)
-    return annos, mask_arrs
+            mask_cat_ids.append(anno['category_id'])
+    return mask_cat_ids, mask_arrs
 
 @functional_datapipe("get_scene_paths")
 class GetScenePaths(IterDataPipe):

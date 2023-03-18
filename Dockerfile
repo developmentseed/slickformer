@@ -8,9 +8,10 @@ RUN apt-get update && apt-get install -y \
     wget \
     libxml2 \
     git \
+    xdg-utils \
     libjpeg-turbo8 \
     libgl1 -y
-# for some reason the last two above don't get installed by conda with opencv
+# last two not installed by conda for some reason for opencv
 
 # Set environment variables
 ENV PATH="/root/mambaforge/bin:$PATH"
