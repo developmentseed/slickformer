@@ -9,7 +9,7 @@ import click
 import dask
 from dask.distributed import Client, progress
 
-from ceruleanml import data
+from ceruleanml import data_creation
 
 
 @click.group()
@@ -23,7 +23,7 @@ def make_coco_metadata(
     name="Cerulean Dataset V2",
     description: str = "Cerulean Dataset V2",
     version: str = "1.0",
-    class_list: List[str] = data.class_list,
+    class_list: List[str] = data_creation.class_list,
 ):
     """Creates COCO Metadata
     Args:
@@ -46,7 +46,7 @@ def make_coco_metadata(
     assert len(class_list) > 0
     categories = [
         {"supercategory": "slick", "id": i, "name": cname}
-        for i, cname in enumerate(class_list)[1:] # we don't want to include the background category
+        for i, cname in list(enumerate(class_list))[1:] # we don't want to include the background category
     ]  # order matters, check that this matches the ids used when annotating if you get a data loading error
     return {
         "info": info,
@@ -88,7 +88,7 @@ def make_coco_dataset(
     start = time.time()
     os.makedirs(coco_outdir, exist_ok=True)
     os.makedirs(os.path.join(coco_outdir, "tiled_images"), exist_ok=True)
-    coco_tiler = data.COCOtiler(os.path.join(coco_outdir, "tiled_images"))
+    coco_tiler = data_creation.COCOtiler(os.path.join(coco_outdir, "tiled_images"))
 
     aux_datasets = []
     if aux_data_path:

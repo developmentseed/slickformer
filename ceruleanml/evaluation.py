@@ -17,6 +17,86 @@ from ceruleanml.inference import (
 mpl.rcParams["axes.grid"] = False
 mpl.rcParams["figure.figsize"] = (12, 12)
 
+def match_instances(pred_masks, gt_masks, class_dict, iou_threshold=0.5):
+    """
+    Computes the matching prediction and groundtruth instances for each category based on IoU scores.
+
+    Args:
+        pred_masks (list of 2D numpy arrays): The list of predicted instance masks.
+        gt_masks (list of 2D numpy arrays): The list of groundtruth instance masks.
+        class_dict (dict): A dictionary mapping category names to category IDs.
+        iou_threshold (float): The IoU threshold for matching instances (default: 0.5).
+
+    Returns:
+        A dictionary with the following keys:
+        - 'true_positives': A dictionary with category IDs as keys and the number of true positives as values.
+          Each value is a list of tuples (gt_category, pred_category) representing the matching groundtruth
+          and predicted categories for each true positive.
+        - 'false_positives': A dictionary with category IDs as keys and the number of false positives as values.
+          Each value is a list of tuples (gt_category, pred_category) representing the groundtruth category and
+          the predicted category for each false positive.
+        - 'false_negatives': A dictionary with category IDs as keys and the number of false negatives as values.
+          Each value is a list of tuples (gt_category, pred_category) representing the groundtruth category and
+          the predicted category for each false negative.
+    """
+    # Get the list of class IDs from the class dictionary
+    class_ids = list(class_dict.values())
+
+    # Create dictionaries to store the true positives, false positives, and false negatives for each category
+    true_positives = {class_id: [] for class_id in class_ids}
+    false_positives = {class_id: [] for class_id in class_ids}
+    false_negatives = {class_id: [] for class_id in class_ids}
+
+    # Loop over the groundtruth masks and find the matching predictions
+    for gt_idx, gt_mask in enumerate(gt_masks):
+        gt_class_id = np.unique(gt_mask)[-1]
+        if gt_class_id == 0:
+            continue  # Skip the background class
+        iou_max = -1
+        pred_max_idx = -1
+        for pred_idx, pred_mask in enumerate(pred_masks):
+            pred_class_id = np.unique(pred_mask)[-1]
+            if pred_class_id != gt_class_id:
+                continue
+            iou = compute_iou(gt_mask, pred_mask)
+            if iou > iou_max:
+                iou_max = iou
+                pred_max_idx = pred_idx
+        if iou_max >= iou_threshold:
+            true_positives[gt_class_id].append((gt_class_id, gt_class_id))
+            pred_masks.pop(pred_max_idx)  # Remove the matching prediction
+        else:
+            false_negatives[gt_class_id].append((gt_class_id, -1))
+
+    # The remaining predictions are false positives
+    for pred_mask in pred_masks:
+        pred_class_id = np.unique(pred_mask)[-1]
+        if pred_class_id == 0:
+            continue  # Skip the background class
+        false_positives[pred_class_id].append((-1, pred_class_id))
+
+    # Convert the lists of tuples to counts
+    true_positives = {k: len(v) for k, v in true_positives.items()}
+    false_positives = {k: len(v) for k, v in false_positives.items()}
+    false_negatives = {k: len(v) for k, v in false_negatives.items()}
+
+    return {'true_positives': true_positives, 'false_positives': false_positives, 'false_negatives': false_negatives}
+
+def compute_iou(mask1, mask2):
+    """
+    Computes the IoU score between two binary masks.
+
+    Args:
+        mask1 (2D numpy array): The first binary mask.
+        mask2 (2D numpy array): The second binary mask.
+
+    Returns:
+        The IoU score between the two masks.
+    """
+    intersection = np.logical_and(mask1, mask2)
+    union = np.logical_or(mask1, mask2)
+    iou = np.sum(intersection) / np.sum(union)
+    return iou
 
 def cm_f1(
     arrays_gt,
