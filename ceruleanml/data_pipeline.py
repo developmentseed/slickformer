@@ -5,6 +5,42 @@ from torchdata.datapipes import functional_datapipe
 from torchdata.datapipes.iter import IterDataPipe
 import skimage.io as skio
 import albumentations as A
+from typing import Dict, List
+
+from typing import Dict, List
+
+def remap_class_dict(class_dict: Dict[str, Dict[str, object]], new_class_list: List[str]) -> Dict[str, Dict[str, object]]:
+    """
+    Remap a dictionary of class names and their attributes to a new dictionary with
+    a different set of class names and color codes.
+
+    Parameters:
+        class_dict (dict): A dictionary of class names and their attributes.
+            Each key is a string representing the class name, and each value is
+            a dictionary with keys "hr" (human readable text) and "cc" (color code).
+        new_class_list (list): A list of new class names to use in the remapped dictionary,
+            using the original keys of the `data_creation.class_dict`.
+
+    Returns:
+        A dictionary with the same key-value pairs as the original `class_dict`,
+        but with the new class names and color codes.
+
+    Raises:
+        ValueError: If a new class name is not found in the original `class_dict`.
+    """
+    if new_class_list == list(class_dict.keys()):
+        return class_dict
+    color_list = [class_dict[name]["cc"] for name in class_dict.keys()]
+    if len(color_list) < len(new_class_list):
+        raise ValueError("Not enough colors in original class dict.")
+    new_class_dict = {}
+    for new_class_name, color in zip(new_class_list, color_list):
+        if new_class_name in class_dict:
+            old_class_dict = class_dict[new_class_name]
+            new_class_dict[new_class_name] = {"hr": old_class_dict["hr"], "cc": color}
+        else:
+            raise ValueError(f"New class name '{new_class_name}' not found in original class dict.")
+    return new_class_dict
 
 def decode_masks(scene_id: str, annotations:dict):
     """decodes mask based on scene and annotation metadata.
@@ -18,15 +54,15 @@ def decode_masks(scene_id: str, annotations:dict):
     """
     scene_coco_record = [im_record for im_record in annotations['images'] if im_record['big_image_original_fname'] == scene_id+".tif"][0]
     mask_arrs = []
-    annos = []
+    mask_cat_ids = []
     for anno in annotations['annotations']:
         if scene_coco_record['id'] == anno['image_id']:
             segment = anno['segmentation']
             # from the source, order is height then width https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocotools/_mask.pyx#L288
             rle = maskUtils.frPyObjects(segment, anno['height'], anno['width'])
             mask_arrs.append(maskUtils.decode(rle)*anno['category_id'])
-            annos.append(anno)
-    return annos, mask_arrs
+            mask_cat_ids.append(anno['category_id'])
+    return mask_cat_ids, mask_arrs
 
 @functional_datapipe("get_scene_paths")
 class GetScenePaths(IterDataPipe):
