@@ -46,7 +46,7 @@ def make_coco_metadata(
     assert len(class_list) > 0
     categories = [
         {"supercategory": "slick", "id": i, "name": cname}
-        for i, cname in list(enumerate(class_list))[1:] # we don't want to include the background category
+        for i, cname in enumerate(class_list)
     ]  # order matters, check that this matches the ids used when annotating if you get a data loading error
     return {
         "info": info,
