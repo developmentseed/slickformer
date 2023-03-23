@@ -48,14 +48,17 @@ def plot_instance_masks(img: Union[str, np.ndarray, torch.Tensor], mask_arrs: li
         coords = list(zip(cols, rows))
         label = new_class_list[mask_cat_ids[i]]
         color = new_class_dict[label]['cc']
-        if outline_only:
-            draw.polygon(coords, outline=color)
-        else:
-            draw.polygon(coords, outline=color, fill=color)
+        try:
+            if outline_only:
+                draw.polygon(coords, outline=color)
+            else:
+                draw.polygon(coords, outline=color, fill=color)
+        except TypeError: # coord less than 2 issue TODO figure otu why this happens with thresholding sometimes. poly too small?
+            pass
     # Show the image with polygons
     plt.imshow(np.array(draw_img))
     legend_elements = []
-    for k, v in data_creation.class_dict.items():
+    for k, v in new_class_dict.items():
         legend_elements.append(Patch(facecolor=[x/255 for x in v['cc']], edgecolor='r', label=k))
 
     ax.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1, 0.5))

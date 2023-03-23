@@ -42,28 +42,6 @@ def remap_class_dict(class_dict: Dict[str, Dict[str, object]], new_class_list: L
             raise ValueError(f"New class name '{new_class_name}' not found in original class dict.")
     return new_class_dict
 
-def decode_masks(scene_id: str, annotations:dict):
-    """decodes mask based on scene and annotation metadata.
-
-    Args:
-        scene_id (dict): A scene_id in annotations['images']. assumes working from full S1 imagery.
-        annotations (dict): the COCO JSON dict
-
-    Returns:
-        _type_: _description_
-    """
-    scene_coco_record = [im_record for im_record in annotations['images'] if im_record['big_image_original_fname'] == scene_id+".tif"][0]
-    mask_arrs = []
-    mask_cat_ids = []
-    for anno in annotations['annotations']:
-        if scene_coco_record['id'] == anno['image_id']:
-            segment = anno['segmentation']
-            # from the source, order is height then width https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocotools/_mask.pyx#L288
-            rle = maskUtils.frPyObjects(segment, anno['height'], anno['width'])
-            mask_arrs.append(maskUtils.decode(rle)*anno['category_id'])
-            mask_cat_ids.append(anno['category_id'])
-    return mask_cat_ids, mask_arrs
-
 @functional_datapipe("get_scene_paths")
 class GetScenePaths(IterDataPipe):
     def __init__(self, source_dp, annotations_dir, **kwargs):
@@ -108,13 +86,17 @@ class DecodeMasks(IterDataPipe):
         for annotations in self.label_dp:
             for im_record in annotations['images']:
                 mask_arrs = []
+                labels = []
+                annos = {}
                 for anno in annotations['annotations']:
                     if im_record['id'] == anno['image_id']:
                         segment = anno['segmentation']
                         # from the source, order is height then width https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocotools/_mask.pyx#L288
                         rle = maskUtils.frPyObjects(segment, anno['height'], anno['width'])
                         mask_arrs.append(maskUtils.decode(rle)*anno['category_id'])
-                yield mask_arrs, anno
+                        labels.append(anno['category_id'])
+                        annos.update({'masks':mask_arrs, 'labels':labels, "image_name": anno['big_image_original_fname']})
+                yield annos
 
 @functional_datapipe("random_crop_mask_if_exists")
 class RandomCropByMasks(IterDataPipe):
@@ -128,6 +110,6 @@ class RandomCropByMasks(IterDataPipe):
         transform = A.Compose(
             [A.CropNonEmptyMaskIfExists(width=self.crop_w, height=self.crop_h)],
         )
-        for src_img, mask_arrs in self.tups:
-            t = transform(image = src_img, masks=mask_arrs)
+        for src_img, mask_dict in self.tups:
+            t = transform(image = src_img, masks=mask_dict['masks'], category_ids=mask_dict['labels'])
             yield t
