@@ -1,6 +1,9 @@
 {
     "version": "0.2.0",
     "configurations": [
+        {
+            "jupyter.debugJustMyCode": false,
+        },
     {
     "name": "make coco dataset no tile",
     "type": "python",
