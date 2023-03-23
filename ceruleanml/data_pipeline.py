@@ -114,8 +114,8 @@ class RandomCropByMasks(IterDataPipe):
             t = transform(image = src_img, masks=mask_dict['masks'], category_ids=mask_dict['labels'])
             is_not_empty = [np.any(mask) for mask in t['masks']]
             t['masks'] = list(compress(t['masks'], is_not_empty))
-            t['labels'] = list(compress(t['category_ids'], is_not_empty))
             t['boxes'] = [extract_bounding_box(mask) for mask in t['masks'] ]
+            t['image_name'] = mask_dict['image_name']
             yield t
 
 def extract_bounding_box(mask) -> np.ndarray:

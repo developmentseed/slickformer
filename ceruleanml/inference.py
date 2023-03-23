@@ -2,6 +2,7 @@
 import torch
 import numpy as np
 from ceruleanml.data_creation import class_dict
+from itertools import compress
 
 def load_tracing_model(savepath):
     tracing_model = torch.jit.load(savepath)
@@ -122,6 +123,11 @@ def mrcnn_3_class_inference(list_chnnl_first_norm_tensors, scripted_model, bbox_
     selected_classes = [key for key in selected_classes_3_class_model if key in class_dict]
     pred_dict = apply_conf_threshold_instances(pred_list[0], bbox_conf_threshold=bbox_conf_threshold)
     high_conf_class_arrs = apply_conf_threshold_masks(pred_dict, mask_conf_threshold=mask_conf_threshold, size=input_size)
+    is_not_empty = [torch.any(mask) for mask in high_conf_class_arrs]
+    high_conf_class_arrs = list(compress(high_conf_class_arrs, is_not_empty))
+    pred_dict['labels'] = list(compress(pred_dict['labels'], is_not_empty))
+    pred_dict['scores'] = list(compress(pred_dict['scores'], is_not_empty))
+    pred_dict['boxes'] = list(compress(pred_dict['boxes'], is_not_empty))
     #necessary for torchmetrics
     pred_dict_thresholded = {}
     pred_dict_thresholded['masks'] = torch.stack(high_conf_class_arrs).to(dtype=torch.uint8)

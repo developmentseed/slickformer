@@ -8,8 +8,8 @@ from typing import Union
 import torch
 from torchvision import transforms
 import pathlib
+from skimage import measure
 from ceruleanml.data_pipeline import remap_class_dict
-import ceruleanml.data_creation
 
 def plot_instance_masks(img: Union[str, np.ndarray, torch.Tensor], mask_arrs: list, mask_cat_ids: dict, class_list: list = data_creation.class_list, outline_only: bool = True):
     """Plots a scene with a simple legend based on the 6 class COCO json or remapped classes.
@@ -41,11 +41,13 @@ def plot_instance_masks(img: Union[str, np.ndarray, torch.Tensor], mask_arrs: li
     draw.text((10, 10), 'Image', fill=(0, 0, 0))
     draw_img.paste(img_pil)
     for i, poly in enumerate(mask_arrs):
-        #TODO this is a quick and dirty way to find contours. couldn't find
-        # a good way to plot the result of find_contours from skimage quickly
-        rows, cols = np.where(poly)
-        # Combine the row and column indices into (x, y) coordinate tuples
-        coords = list(zip(cols, rows))
+        contours = measure.find_contours(np.where(poly>0,1,0))
+        sorted_contours = sorted(contours, key=lambda x: len(x))
+        rounded_contours = [(np.round(contour[:, 0]).astype(int), np.round(contour[:, 1]).astype(int) ) for contour in sorted_contours ]
+        try:
+            coords = list(zip(rounded_contours[0][1], rounded_contours[0][0]))
+        except IndexError:
+            raise IndexdError("huh")
         label = new_class_list[mask_cat_ids[i]]
         color = new_class_dict[label]['cc']
         try:
