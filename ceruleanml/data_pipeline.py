@@ -1,13 +1,13 @@
 from pycocotools import mask as maskUtils
 import os
-from albumentations.augmentations.geometric.resize import LongestMaxSize, SmallestMaxSize
 from torchdata.datapipes import functional_datapipe
 from torchdata.datapipes.iter import IterDataPipe
 import skimage.io as skio
 import albumentations as A
+from itertools import compress
+import numpy as np
 from typing import Dict, List
 
-from typing import Dict, List
 
 def remap_class_dict(class_dict: Dict[str, Dict[str, object]], new_class_list: List[str]) -> Dict[str, Dict[str, object]]:
     """
@@ -112,4 +112,24 @@ class RandomCropByMasks(IterDataPipe):
         )
         for src_img, mask_dict in self.tups:
             t = transform(image = src_img, masks=mask_dict['masks'], category_ids=mask_dict['labels'])
+            is_not_empty = [np.any(mask) for mask in t['masks']]
+            t['masks'] = list(compress(t['masks'], is_not_empty))
+            t['labels'] = list(compress(t['category_ids'], is_not_empty))
+            t['boxes'] = [extract_bounding_box(mask) for mask in t['masks'] ]
             yield t
+
+def extract_bounding_box(mask) -> np.ndarray:
+    """Extract the bounding box of a mask.
+    :param mask: HxW numpy array
+    :return: bounding box
+    """
+    pos = np.where(mask)
+
+    if not (pos[0].size or pos[1].size):
+        return np.array([0, 0, 0, 0])
+
+    xmin = np.min(pos[1])
+    xmax = np.max(pos[1]) + 1
+    ymin = np.min(pos[0])
+    ymax = np.max(pos[0]) + 1
+    return np.array([xmin, ymin, xmax, ymax])
