@@ -40,23 +40,22 @@ def plot_instance_masks(img: Union[str, np.ndarray, torch.Tensor], mask_arrs: li
     draw = ImageDraw.Draw(draw_img)
     draw.text((10, 10), 'Image', fill=(0, 0, 0))
     draw_img.paste(img_pil)
-    for i, poly in enumerate(mask_arrs):
-        contours = measure.find_contours(np.where(poly>0,1,0))
-        sorted_contours = sorted(contours, key=lambda x: len(x))
-        rounded_contours = [(np.round(contour[:, 0]).astype(int), np.round(contour[:, 1]).astype(int) ) for contour in sorted_contours ]
-        try:
-            coords = list(zip(rounded_contours[0][1], rounded_contours[0][0]))
-        except IndexError:
-            raise IndexdError("huh")
+    for i, mask in enumerate(mask_arrs):
         label = new_class_list[mask_cat_ids[i]]
         color = new_class_dict[label]['cc']
-        try:
-            if outline_only:
-                draw.polygon(coords, outline=color)
-            else:
-                draw.polygon(coords, outline=color, fill=color)
-        except TypeError: # coord less than 2 issue TODO figure otu why this happens with thresholding sometimes. poly too small?
-            pass
+        # extracting contours. a single instance mask may have many discontinuous contours
+        contours = measure.find_contours(np.where(mask>0,1,0))
+        sorted_contours = sorted(contours, key=lambda x: len(x))
+        rounded_contours = [(np.round(contour[:, 0]).astype(int), np.round(contour[:, 1]).astype(int) ) for contour in sorted_contours ]
+        for contour in rounded_contours:
+            coords = list(zip(contour[1], contour[0]))
+            try:
+                if outline_only:
+                    draw.polygon(coords, outline=color)
+                else:
+                    draw.polygon(coords, outline=color, fill=color)
+            except TypeError: # coord less than 2 issue TODO figure out why this happens with thresholding sometimes. poly too small?
+                raise TypeError("huh")
     # Show the image with polygons
     plt.imshow(np.array(draw_img))
     legend_elements = []
