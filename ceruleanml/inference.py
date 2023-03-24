@@ -114,7 +114,7 @@ def apply_conf_threshold_masks(pred_dict, mask_conf_threshold, size):
     else:
         return torch.zeros(size, size).long()
 
-def mrcnn_3_class_inference(list_chnnl_first_norm_tensors, scripted_model, bbox_conf_threshold, mask_conf_threshold, input_size):
+def mrcnn_3_class_inference(list_chnnl_first_norm_tensors, scripted_model, bbox_conf_threshold, mask_conf_threshold, input_size, interclass_nms_threshold=None):
     scripted_model.eval()
     with torch.no_grad():
         losses, pred_list = scripted_model(list_chnnl_first_norm_tensors)
@@ -122,6 +122,10 @@ def mrcnn_3_class_inference(list_chnnl_first_norm_tensors, scripted_model, bbox_
     selected_classes_3_class_model = ['background', 'infra_slick', 'natural_seep', 'coincident_vessel']
     selected_classes = [key for key in selected_classes_3_class_model if key in class_dict]
     pred_dict = apply_conf_threshold_instances(pred_list[0], bbox_conf_threshold=bbox_conf_threshold)
+    if interclass_nms_threshold:
+        pred_dict = apply_interclass_mask_nms(
+                pred_dict, nms_threshold=interclass_nms_threshold
+            )
     high_conf_class_arrs = apply_conf_threshold_masks(pred_dict, mask_conf_threshold=mask_conf_threshold, size=input_size)
     is_not_empty = [torch.any(mask) for mask in high_conf_class_arrs]
     high_conf_class_arrs = list(compress(high_conf_class_arrs, is_not_empty))
@@ -134,3 +138,65 @@ def mrcnn_3_class_inference(list_chnnl_first_norm_tensors, scripted_model, bbox_
     pred_dict_thresholded['scores'] = torch.stack(pred_dict['scores'])
     pred_dict_thresholded['labels'] = torch.stack(pred_dict['labels'])
     return pred_dict_thresholded, pred_dict
+
+def mask_similarity(u, v):
+    """
+    Takes two pixel-confidence masks, and calculates how similar they are to each other
+    Returns a value between 0 (no overlap) and 1 (identical)
+    Utilizes an IoU style construction
+    Can be used as NMS across classes for mutually-exclusive classifications
+    """
+    return 2 * torch.sum(torch.sqrt(torch.mul(u, v))) / (torch.sum(u + v))
+
+
+def apply_interclass_mask_nms(pred_dict, nms_threshold):
+    """Apply a nms threshold to the output of logits_to_classes for a tile.
+    Args:
+        pred_dict (dict): a dict with (for example):
+        {'boxes': tensor([[  0.00000,  14.11488, 206.41418, 210.23907],
+          [ 66.99806, 119.41994, 107.67549, 224.00000],
+          [ 47.37723,  41.04019, 122.53947, 224.00000]], grad_fn=<StackBackward0>),
+        'labels': tensor([2, 2, 2]),
+        'scores': tensor([0.99992, 0.99763, 0.22231], grad_fn=<IndexBackward0>),
+        'masks': tensor([[[[0., 0., 0.,  ..., 0., 0., 0.],
+                    [0., 0., 0.,  ..., 0., 0., 0.],
+                    [0., 0., 0.,  ..., 0., 0., 0.],
+                    ...,
+                    [0., 0., 0.,  ..., 0., 0., 0.],
+                    [0., 0., 0.,  ..., 0., 0., 0.],
+                    [0., 0., 0.,  ..., 0., 0., 0.]]],
+                [[[0., 0., 0.,  ..., 0., 0., 0.],
+                    [0., 0., 0.,  ..., 0., 0., 0.],
+                    [0., 0., 0.,  ..., 0., 0., 0.],
+                    ...,
+                    [0., 0., 0.,  ..., 0., 0., 0.],
+                    [0., 0., 0.,  ..., 0., 0., 0.],
+                    [0., 0., 0.,  ..., 0., 0., 0.]]],
+                [[[0., 0., 0.,  ..., 0., 0., 0.],
+                    [0., 0., 0.,  ..., 0., 0., 0.],
+                    [0., 0., 0.,  ..., 0., 0., 0.],
+                    ...,
+                    [0., 0., 0.,  ..., 0., 0., 0.],
+                    [0., 0., 0.,  ..., 0., 0., 0.],
+                    [0., 0., 0.,  ..., 0., 0., 0.]]]], grad_fn=<UnsqueezeBackward0>)}
+        threshold (float): the threshold above which two predictions are considered overlapping
+    Returns:
+        dict: The confidence thresholded dict result, using the nms threshold. Values of dict are now lists instead of tensors: {'boxes':[], 'labels':[], 'scores':[], 'masks':[]}
+    """
+    masks = pred_dict["masks"]
+    res = torch.tensor([True] * len(masks)).to(device="cuda")
+
+    new_dict = {"boxes": [], "labels": [], "scores": [], "masks": []}
+    for i, i_mask in enumerate(masks):
+        if res[i]:
+            downstream = [torch.tensor(True)] * (i + 1) + [
+                mask_similarity(i_mask, j_mask) <= nms_threshold
+                for j_mask in masks[i + 1 :]
+            ]
+            res = torch.logical_and(res, torch.stack(downstream).to(device="cuda"))
+
+            new_dict["boxes"].append(pred_dict["boxes"][i])
+            new_dict["labels"].append(pred_dict["labels"][i])
+            new_dict["scores"].append(pred_dict["scores"][i])
+            new_dict["masks"].append(pred_dict["masks"][i])
+    return new_dict
