@@ -110,9 +110,9 @@ def apply_conf_threshold_masks(pred_dict, mask_conf_threshold, size):
             # could have downstream impacts on other eval code?
             return high_conf_classes
         else:
-            return high_conf_class_mask.squeeze()
+            return [high_conf_class_mask.squeeze()]
     else:
-        return torch.zeros(size, size).long()
+        return [torch.zeros(size, size).long()]
 
 def mrcnn_3_class_inference(list_chnnl_first_norm_tensors, scripted_model, bbox_conf_threshold, mask_conf_threshold, input_size, interclass_nms_threshold=None):
     scripted_model.eval()
@@ -137,6 +137,7 @@ def mrcnn_3_class_inference(list_chnnl_first_norm_tensors, scripted_model, bbox_
     pred_dict_thresholded['masks'] = torch.stack(high_conf_class_arrs).to(dtype=torch.uint8)
     pred_dict_thresholded['scores'] = torch.stack(pred_dict['scores'])
     pred_dict_thresholded['labels'] = torch.stack(pred_dict['labels'])
+    pred_dict_thresholded['boxes'] = torch.stack(pred_dict['boxes'])
     return pred_dict_thresholded, pred_dict
 
 def mask_similarity(u, v):
