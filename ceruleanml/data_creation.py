@@ -41,33 +41,6 @@ class_list = list(class_dict.keys())
 # TODO Hard Neg is overloaded with overlays but they shouldn't be exported during annotation
 # TODO Hard Neg is just a class that we will use to measure performance gains metrics
 
-def simple_class_remap(class_id):
-    """
-    Remap 6 classes from the class_dict to more simple categories. So we go from this
-
-    [{'supercategory': 'slick', 'id': 0, 'name': 'background'}, # TODO this is a quantitatively inconsequential bug that this is include din the coco metadata
-    {'supercategory': 'slick', 'id': 1, 'name': 'infra_slick'},
-    {'supercategory': 'slick', 'id': 2, 'name': 'natural_seep'},
-    {'supercategory': 'slick', 'id': 3, 'name': 'coincident_vessel'},
-    {'supercategory': 'slick', 'id': 4, 'name': 'recent_vessel'},
-    {'supercategory': 'slick', 'id': 5, 'name': 'old_vessel'},
-    {'supercategory': 'slick', 'id': 6, 'name': 'ambiguous'}]
-
-    to this
-
-    [{'supercategory': 'slick', 'id': 0, 'name': 'background'},
-    {'supercategory': 'slick', 'id': 1, 'name': 'infra_slick'},
-    {'supercategory': 'slick', 'id': 2, 'name': 'natural_seep'},
-    {'supercategory': 'slick', 'id': 3, 'name': 'coincident_vessel'}]
-    """
-    assert class_id != 0 # annotations should not be background class
-    if class_id == 1 or class_id ==2:
-        return class_id
-    elif class_id in [3,4,5]:
-        return 3
-    elif class_id == 6:
-        return "remove" # denotes that this should be removed. we only keep ambiguous for evaluation.
-
 def reshape_split(image: np.ndarray, kernel_size: tuple):
     """Takes a large image and tile size and pads the image with zeros then
         splits the 2D image into a 3D tiled stack of images.
