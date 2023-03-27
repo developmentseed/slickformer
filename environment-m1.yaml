@@ -1,16 +1,16 @@
 name: slickformer
 channels:
-  - conda-forge
   - pytorch
-  - nvidia
+  - conda-forge
 dependencies:
   - albumentations
   - black
   - boto3
   - dask
   - distributed
-  - gcc
+  - fiona
   - graphviz
+  - gcc
   - httpx
   - hydra-core
   - ipykernel
@@ -21,9 +21,8 @@ dependencies:
   - pandas
   - pip
   - python-graphviz
-  - pytorch==2.0
+  - pytorch
   - pytorch-lightning==2.0
-  - pytorch-cuda==11.7
   - pystac-client
   - rasterio
   - rioxarray
@@ -33,7 +32,7 @@ dependencies:
   - seaborn
   - tensorboard
   - timm
-  - torchdata==0.6
+  - torchdata
   - torchvision
   - torchmetrics
   - transformers
@@ -44,4 +43,3 @@ dependencies:
       - git+https://github.com/waspinator/pycococreator.git@0.2.1
       - rio-cogeo
       - rio-tiler-pds
-      - distancerasters

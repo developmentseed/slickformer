@@ -13,7 +13,7 @@ from setuptools import find_packages, setup
 requirements = [
     "Click>=7.0",
     # "Cython", installing this causes timeout errors during build ???
-    "distancerasters",
+    # "distancerasters", causes fiona build errors on mac m1
     "pycocotools==2.0.4",
     "pycococreatortools @ git+https://github.com/waspinator/pycococreator.git#egg=pycocreatortools",
     "ipywidgets",
