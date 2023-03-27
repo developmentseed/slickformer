@@ -1,8 +1,9 @@
 """module for inference on icevision mask r-cnn models trained on CV2"""
 import torch
 import numpy as np
-from ceruleanml.data_creation import class_dict
+from ceruleanml.utils import class_dict
 from itertools import compress
+
 
 def load_tracing_model(savepath):
     tracing_model = torch.jit.load(savepath)
@@ -114,31 +115,49 @@ def apply_conf_threshold_masks(pred_dict, mask_conf_threshold, size):
     else:
         return [torch.zeros(size, size).long()]
 
-def mrcnn_3_class_inference(list_chnnl_first_norm_tensors, scripted_model, bbox_conf_threshold, mask_conf_threshold, input_size, interclass_nms_threshold=None):
+
+def mrcnn_3_class_inference(
+    list_chnnl_first_norm_tensors,
+    scripted_model,
+    bbox_conf_threshold,
+    mask_conf_threshold,
+    input_size,
+    interclass_nms_threshold=None,
+):
     scripted_model.eval()
     with torch.no_grad():
         losses, pred_list = scripted_model(list_chnnl_first_norm_tensors)
-    pred_list[0]['masks'] = np.squeeze(pred_list[0]['masks']) # we modify this to match expected shape for plotting
-    selected_classes_3_class_model = ['background', 'infra_slick', 'natural_seep', 'coincident_vessel']
+    pred_list[0]["masks"] = np.squeeze(
+        pred_list[0]["masks"]
+    )  # we modify this to match expected shape for plotting
+    selected_classes_3_class_model = [
+        "background",
+        "infra_slick",
+        "natural_seep",
+        "coincident_vessel",
+    ]
     selected_classes = [key for key in selected_classes_3_class_model if key in class_dict]
-    pred_dict = apply_conf_threshold_instances(pred_list[0], bbox_conf_threshold=bbox_conf_threshold)
+    pred_dict = apply_conf_threshold_instances(
+        pred_list[0], bbox_conf_threshold=bbox_conf_threshold
+    )
     if interclass_nms_threshold:
-        pred_dict = apply_interclass_mask_nms(
-                pred_dict, nms_threshold=interclass_nms_threshold
-            )
-    high_conf_class_arrs = apply_conf_threshold_masks(pred_dict, mask_conf_threshold=mask_conf_threshold, size=input_size)
+        pred_dict = apply_interclass_mask_nms(pred_dict, nms_threshold=interclass_nms_threshold)
+    high_conf_class_arrs = apply_conf_threshold_masks(
+        pred_dict, mask_conf_threshold=mask_conf_threshold, size=input_size
+    )
     is_not_empty = [torch.any(mask) for mask in high_conf_class_arrs]
     high_conf_class_arrs = list(compress(high_conf_class_arrs, is_not_empty))
-    pred_dict['labels'] = list(compress(pred_dict['labels'], is_not_empty))
-    pred_dict['scores'] = list(compress(pred_dict['scores'], is_not_empty))
-    pred_dict['boxes'] = list(compress(pred_dict['boxes'], is_not_empty))
-    #necessary for torchmetrics
+    pred_dict["labels"] = list(compress(pred_dict["labels"], is_not_empty))
+    pred_dict["scores"] = list(compress(pred_dict["scores"], is_not_empty))
+    pred_dict["boxes"] = list(compress(pred_dict["boxes"], is_not_empty))
+    # necessary for torchmetrics
     pred_dict_thresholded = {}
-    pred_dict_thresholded['masks'] = torch.stack(high_conf_class_arrs).to(dtype=torch.uint8)
-    pred_dict_thresholded['scores'] = torch.stack(pred_dict['scores'])
-    pred_dict_thresholded['labels'] = torch.stack(pred_dict['labels'])
-    pred_dict_thresholded['boxes'] = torch.stack(pred_dict['boxes'])
+    pred_dict_thresholded["masks"] = torch.stack(high_conf_class_arrs).to(dtype=torch.uint8)
+    pred_dict_thresholded["scores"] = torch.stack(pred_dict["scores"])
+    pred_dict_thresholded["labels"] = torch.stack(pred_dict["labels"])
+    pred_dict_thresholded["boxes"] = torch.stack(pred_dict["boxes"])
     return pred_dict_thresholded, pred_dict
+
 
 def mask_similarity(u, v):
     """
@@ -191,8 +210,7 @@ def apply_interclass_mask_nms(pred_dict, nms_threshold):
     for i, i_mask in enumerate(masks):
         if res[i]:
             downstream = [torch.tensor(True)] * (i + 1) + [
-                mask_similarity(i_mask, j_mask) <= nms_threshold
-                for j_mask in masks[i + 1 :]
+                mask_similarity(i_mask, j_mask) <= nms_threshold for j_mask in masks[i + 1 :]
             ]
             res = torch.logical_and(res, torch.stack(downstream).to(device="cuda"))
 
