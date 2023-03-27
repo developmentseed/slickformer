@@ -24,22 +24,11 @@ from rasterio.io import MemoryFile
 from rasterio.plot import reshape_as_image, reshape_as_raster
 from rasterio.vrt import WarpedVRT
 from rio_tiler.io import COGReader
-
-# Single Source of Truth for categorical classes
-# and their respective Human Readable (hr) text and Color Codes (cc) photopea designations
-class_dict = {
-    "background": {"hr": "Background", "cc": (0, 255, 255)},
-    "infra_slick": {"hr": "Infrastructure", "cc": (0, 0, 255)},
-    "natural_seep": {"hr": "Natural Seep", "cc": (0, 255, 0)},
-    "coincident_vessel": {"hr": "Coincident Vessel", "cc": (255, 0, 0)},
-    "recent_vessel": {"hr": "Recent Vessel", "cc": (255, 255, 0)},
-    "old_vessel": {"hr": "Old Vessel", "cc": (255, 0, 255)},
-    "ambiguous": {"hr": "Ambiguous", "cc": (255, 255, 255)},
-}
-class_list = list(class_dict.keys())
+from ceruleanml.utils import class_list, class_dict
 
 # TODO Hard Neg is overloaded with overlays but they shouldn't be exported during annotation
 # TODO Hard Neg is just a class that we will use to measure performance gains metrics
+
 
 def reshape_split(image: np.ndarray, kernel_size: tuple):
     """Takes a large image and tile size and pads the image with zeros then
@@ -110,8 +99,7 @@ def save_tiles_from_3d(tiled_arr: np.ndarray, img_fname: str, outdir: str):
     for i, tile in enumerate(tiled_arr):
         fname = os.path.join(
             outdir,
-            os.path.basename(os.path.dirname(img_fname))
-            + f"_vv-image_local_tile_{i}.tif",
+            os.path.basename(os.path.dirname(img_fname)) + f"_vv-image_local_tile_{i}.tif",
         )
         skio.imsave(fname, tile, "tifffile", False)  # don't check contrast
     print("finished saving images")
@@ -156,9 +144,7 @@ def rgbalpha_to_binary(arr: np.ndarray, r: int, g: int, b: int):
     Returns:
         np.ndarray: the binary array
     """
-    return np.logical_and.reduce(
-        [arr[:, :, 0] == r, arr[:, :, 1] == g, arr[:, :, 2] == b]
-    )
+    return np.logical_and.reduce([arr[:, :, 0] == r, arr[:, :, 1] == g, arr[:, :, 2] == b])
 
 
 def is_layer_of_class(arr, category):
@@ -395,9 +381,7 @@ class COCOtiler:
                             add_alpha=False,
                         ) as vrt_dst:
                             # arr is (c, h, w)
-                            arr = vrt_dst.read(
-                                out_shape=(vrt_dst.count, *s1_image_shape)
-                            )
+                            arr = vrt_dst.read(out_shape=(vrt_dst.count, *s1_image_shape))
 
                             assert arr.shape[1:] == s1_image_shape
             arr = reshape_as_image(arr)
@@ -430,25 +414,19 @@ class COCOtiler:
                     annotation_info.update(
                         {
                             "big_image_id": scene_index,
-                            "big_image_original_fname": image_info[
-                                "big_image_original_fname"
-                            ],
+                            "big_image_original_fname": image_info["big_image_original_fname"],
                         }
                     )
                     coco_output["annotations"].append(annotation_info)
         print(f"Number of seconds for coco_output creation: {time.time() - start}")
         return coco_output
 
-    def save_coco_output(
-        self, coco_output, outpath: str = "./instances_slicks_test_v2.json"
-    ):
+    def save_coco_output(self, coco_output, outpath: str = "./instances_slicks_test_v2.json"):
         # saving the coco dataset
         with open(f"{outpath}", "w") as output_json_file:
             json.dump(coco_output, output_json_file)
 
-    def handle_aux_datasets(
-        self, aux_datasets, scene_id, bounds, image_shape, **kwargs
-    ):
+    def handle_aux_datasets(self, aux_datasets, scene_id, bounds, image_shape, **kwargs):
         assert (
             len(aux_datasets) == 2 or len(aux_datasets) == 3
         )  # so save as png file need RGB or RGBA
@@ -467,9 +445,7 @@ class COCOtiler:
             if aux_dataset_channels is None:
                 aux_dataset_channels = ar
             else:
-                aux_dataset_channels = np.concatenate(
-                    [aux_dataset_channels, ar], axis=2
-                )
+                aux_dataset_channels = np.concatenate([aux_dataset_channels, ar], axis=2)
 
         return aux_dataset_channels
 
@@ -570,9 +546,7 @@ def get_dist_array_from_vector(
         img_shape[0] // aux_resample_ratio,
         img_shape[1] // aux_resample_ratio,
     )
-    img_affine = rasterio.transform.from_bounds(
-        *bounds, resampled_shape[0], resampled_shape[1]
-    )
+    img_affine = rasterio.transform.from_bounds(*bounds, resampled_shape[0], resampled_shape[1])
     rv_array, affine = dr.rasterize(
         shp,
         affine=img_affine,
@@ -629,9 +603,7 @@ def get_ship_density(
                     "withgeo": True,
                 }
             },
-            "where": [
-                [{"col": "time", "test": "Equal", "value": f"{scene_date_month}"}]
-            ],
+            "where": [[{"col": "time", "test": "Equal", "value": f"{scene_date_month}"}]],
         },
     }
 
@@ -674,8 +646,7 @@ def get_annotation_and_image_info(
     big_image_fname = os.path.basename(os.path.dirname(instance_path)) + ".tif"
     if len(img_name) == 0:
         tile_fname = (
-            os.path.basename(os.path.dirname(instance_path))
-            + f"{template_str}{local_tile_id}.tif"
+            os.path.basename(os.path.dirname(instance_path)) + f"{template_str}{local_tile_id}.tif"
         )
     else:
         tile_fname = img_name
@@ -713,9 +684,7 @@ def get_annotation_and_image_info(
                 "id": class_list.index(category),
                 "is_crowd": True,
             }  # forces compressed RLE format
-        binary_mask = rgbalpha_to_binary(arr, *class_dict[category]["cc"]).astype(
-            np.uint8
-        )
+        binary_mask = rgbalpha_to_binary(arr, *class_dict[category]["cc"]).astype(np.uint8)
     annotation_info = pycococreatortools.create_annotation_info(
         instance_id,
         global_tile_id,

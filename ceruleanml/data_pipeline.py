@@ -9,7 +9,10 @@ import numpy as np
 from typing import Dict, List
 import torch
 
-def remap_class_dict(class_dict: Dict[str, Dict[str, object]], new_class_list: List[str]) -> Dict[str, Dict[str, object]]:
+
+def remap_class_dict(
+    class_dict: Dict[str, Dict[str, object]], new_class_list: List[str]
+) -> Dict[str, Dict[str, object]]:
     """
     Remap a dictionary of class names and their attributes to a new dictionary with
     a different set of class names and color codes.
@@ -19,7 +22,7 @@ def remap_class_dict(class_dict: Dict[str, Dict[str, object]], new_class_list: L
             Each key is a string representing the class name, and each value is
             a dictionary with keys "hr" (human readable text) and "cc" (color code).
         new_class_list (list): A list of new class names to use in the remapped dictionary,
-            using the original keys of the `data_creation.class_dict`.
+            using the original keys of the `utils.class_dict`.
 
     Returns:
         A dictionary with the same key-value pairs as the original `class_dict`,
@@ -42,17 +45,23 @@ def remap_class_dict(class_dict: Dict[str, Dict[str, object]], new_class_list: L
             raise ValueError(f"New class name '{new_class_name}' not found in original class dict.")
     return new_class_dict
 
+
 def stack_to_tensors(gdict):
-    gdict['masks'] = torch.stack([torch.tensor(arr) for arr in gdict['masks']]).to(dtype=torch.uint8)
-    gdict['labels'] = torch.stack([torch.tensor(arr) for arr in gdict['labels']])
+    gdict["masks"] = torch.stack([torch.tensor(arr) for arr in gdict["masks"]]).to(
+        dtype=torch.uint8
+    )
+    gdict["labels"] = torch.stack([torch.tensor(arr) for arr in gdict["labels"]])
+    gdict["boxes"] = torch.stack([torch.tensor(arr) for arr in gdict["boxes"]])
     return gdict
+
 
 def channel_first_norm_to_tensor(gdict):
     # channel first needs to happen after pil crop
     # norm is faster if applied post pil crop by about 1 second
-    gdict.update({"image": torch.Tensor(np.moveaxis(gdict['image'],2,0) / 255)})
+    gdict.update({"image": torch.Tensor(np.moveaxis(gdict["image"], 2, 0) / 255)})
     gdict = stack_to_tensors(gdict)
     return gdict
+
 
 @functional_datapipe("get_scene_paths")
 class GetScenePaths(IterDataPipe):
@@ -63,21 +72,26 @@ class GetScenePaths(IterDataPipe):
         self.annotations = next(iter(self.source_dp))
 
     def __iter__(self):
-        for record in self.annotations['images']:
-            yield os.path.join(self.annotations_dir, "tiled_images", record['file_name'])
+        for record in self.annotations["images"]:
+            yield os.path.join(self.annotations_dir, "tiled_images", record["file_name"])
+
     def __len__(self):
-        return len(self.annotations['images'])
+        return len(self.annotations["images"])
+
 
 @functional_datapipe("read_tiff")
 class ReadTiff(IterDataPipe):
     def __init__(self, source_dp, **kwargs):
         self.src_img_paths = source_dp
         self.kwargs = kwargs
+
     def __iter__(self):
         for src_img_path in self.src_img_paths:
             yield skio.imread(src_img_path)
+
     def __len__(self):
         return len(self.src_img_paths)
+
 
 @functional_datapipe("decode_masks")
 class DecodeMasks(IterDataPipe):
@@ -90,48 +104,58 @@ class DecodeMasks(IterDataPipe):
     Returns:
         tuple: Tuple of list of mask arrays and annotation metadata, including RLE compressed masks
     """
+
     def __init__(self, label_dp, **kwargs):
         self.label_dp = label_dp
         self.kwargs = kwargs
 
     def __iter__(self):
         for annotations in self.label_dp:
-            for im_record in annotations['images']:
+            for im_record in annotations["images"]:
                 mask_arrs = []
                 labels = []
                 annos = {}
-                for anno in annotations['annotations']:
-                    if im_record['id'] == anno['image_id']:
-                        segment = anno['segmentation']
+                for anno in annotations["annotations"]:
+                    if im_record["id"] == anno["image_id"]:
+                        segment = anno["segmentation"]
                         # from the source, order is height then width https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocotools/_mask.pyx#L288
-                        rle = maskUtils.frPyObjects(segment, anno['height'], anno['width'])
-                        mask_arrs.append(maskUtils.decode(rle)*anno['category_id'])
-                        labels.append(anno['category_id'])
-                        annos.update({'masks':mask_arrs, 'labels':labels, "image_name": anno['big_image_original_fname']})
+                        rle = maskUtils.frPyObjects(segment, anno["height"], anno["width"])
+                        mask_arrs.append(maskUtils.decode(rle) * anno["category_id"])
+                        labels.append(anno["category_id"])
+                        annos.update(
+                            {
+                                "masks": mask_arrs,
+                                "labels": labels,
+                                "image_name": anno["big_image_original_fname"],
+                            }
+                        )
                 yield annos
+
 
 @functional_datapipe("random_crop_mask_if_exists")
 class RandomCropByMasks(IterDataPipe):
-    #https://albumentations.ai/docs/getting_started/mask_augmentation/
+    # https://albumentations.ai/docs/getting_started/mask_augmentation/
     def __init__(self, img_masks_tuple, crop_w, crop_h, **kwargs):
-        self.tups =  img_masks_tuple
+        self.tups = img_masks_tuple
         self.kwargs = kwargs
         self.crop_w = crop_w
         self.crop_h = crop_h
+
     def __iter__(self):
         transform = A.Compose(
             [A.CropNonEmptyMaskIfExists(width=self.crop_w, height=self.crop_h)],
         )
         for src_img, mask_dict in self.tups:
-            t = transform(image = src_img, masks=mask_dict['masks'], category_ids=mask_dict['labels'])
-            is_not_empty = [np.any(mask) for mask in t['masks']]
-            t['masks'] = list(compress(t['masks'], is_not_empty))
+            t = transform(image=src_img, masks=mask_dict["masks"], category_ids=mask_dict["labels"])
+            is_not_empty = [np.any(mask) for mask in t["masks"]]
+            t["masks"] = list(compress(t["masks"], is_not_empty))
             # albumentations uses category ids, coco and mrcnn model use labels.
-            t['labels'] = list(compress(t['category_ids'], is_not_empty))
-            t.pop('category_ids')
-            t['boxes'] = [extract_bounding_box(mask) for mask in t['masks'] ]
-            t['image_name'] = mask_dict['image_name']
+            t["labels"] = list(compress(t["category_ids"], is_not_empty))
+            t.pop("category_ids")
+            t["boxes"] = [extract_bounding_box(mask) for mask in t["masks"]]
+            t["image_name"] = mask_dict["image_name"]
             yield t
+
 
 def extract_bounding_box(mask) -> np.ndarray:
     """Extract the bounding box of a mask.

@@ -10,6 +10,7 @@ import dask
 from dask.distributed import Client, progress
 
 from ceruleanml import data_creation
+from ceruleanml.utils import class_list
 
 
 @click.group()
@@ -23,7 +24,7 @@ def make_coco_metadata(
     name="Cerulean Dataset V2",
     description: str = "Cerulean Dataset V2",
     version: str = "1.0",
-    class_list: List[str] = data_creation.class_list,
+    class_list: List[str] = class_list,
 ):
     """Creates COCO Metadata
     Args:
@@ -45,8 +46,7 @@ def make_coco_metadata(
     licenses = [{"url": "none", "id": 1, "name": name}]
     assert len(class_list) > 0
     categories = [
-        {"supercategory": "slick", "id": i, "name": cname}
-        for i, cname in enumerate(class_list)
+        {"supercategory": "slick", "id": i, "name": cname} for i, cname in enumerate(class_list)
     ]  # order matters, check that this matches the ids used when annotating if you get a data loading error
     return {
         "info": info,
@@ -117,9 +117,7 @@ def make_coco_dataset(
                 coco_outputs.append(coco_output)
         final_coco_output = make_coco_metadata(name=name)
         # when we create a distributed client
-        coco_outputs = client.persist(
-            coco_outputs
-        )  # start computation in the background
+        coco_outputs = client.persist(coco_outputs)  # start computation in the background
         progress(coco_outputs)  # watch progress
         coco_outputs = client.compute(coco_outputs, sync=True)
         # coco_outputs = dask.compute(
