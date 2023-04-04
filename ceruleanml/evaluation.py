@@ -1,6 +1,6 @@
 import torch
 from itertools import compress
-from ceruleanml.data_pipeline import stack_to_tensors
+from ceruleanml.data_pipeline import stack_tensors
 def three_class_remap(class_id):
     """
     Remap 6 classes from the class_dict to more simple categories. So we go from this
@@ -37,4 +37,4 @@ def remap_gt_dict(gt_dict):
     gt_dict['labels'] = list(compress(gt_dict['labels'], is_not_none))
     gt_dict['masks'] = list(compress(gt_dict['masks'], is_not_none))
     gt_dict['boxes'] = list(compress(gt_dict['boxes'], is_not_none))
-    return stack_to_tensors(gt_dict)
+    return stack_tensors(gt_dict)

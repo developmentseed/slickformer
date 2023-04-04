@@ -42,7 +42,7 @@ def remap_class_dict(class_dict: Dict[str, Dict[str, object]], new_class_list: L
             raise ValueError(f"New class name '{new_class_name}' not found in original class dict.")
     return new_class_dict
 
-def stack_to_tensors(gdict):
+def stack_tensors(gdict):
     gdict['masks'] = torch.stack([torch.tensor(arr) for arr in gdict['masks']]).to(dtype=torch.uint8)
     gdict['labels'] = torch.stack([torch.tensor(arr) for arr in gdict['labels']])
     gdict['boxes'] = torch.stack([torch.tensor(arr) for arr in gdict['boxes']])
@@ -52,8 +52,14 @@ def channel_first_norm_to_tensor(gdict):
     # channel first needs to happen after pil crop
     # norm is faster if applied post pil crop by about 1 second
     gdict.update({"image": torch.Tensor(np.moveaxis(gdict['image'],2,0) / 255)})
-    gdict = stack_to_tensors(gdict)
+    # gdict = stack_tensors(gdict)
     return gdict
+
+def put_image_in_dict(image):
+    pdict = {}
+    pdict['image'] = image 
+    return pdict
+
 
 @functional_datapipe("get_scene_paths")
 class GetScenePaths(IterDataPipe):
