@@ -2,6 +2,7 @@
 import torch
 import numpy as np
 from ceruleanml.data_creation import class_dict
+from ceruleanml.data_pipeline import extract_bounding_box
 from itertools import compress
 
 def load_tracing_model(savepath):
@@ -115,6 +116,19 @@ def apply_conf_threshold_masks(pred_dict, mask_conf_threshold, size):
         return [torch.zeros(size, size).long()]
 
 def mrcnn_3_class_inference(list_chnnl_first_norm_tensors, scripted_model, bbox_conf_threshold, mask_conf_threshold, input_size, interclass_nms_threshold=None):
+    """Does multiclass NMS on slick masks. Very slow, exponential time with number of slicks. TODO replace with faster alternative.
+
+    Args:
+        list_chnnl_first_norm_tensors (_type_): _description_
+        scripted_model (_type_): _description_
+        bbox_conf_threshold (_type_): _description_
+        mask_conf_threshold (_type_): _description_
+        input_size (_type_): _description_
+        interclass_nms_threshold (_type_, optional): _description_. Defaults to None.
+
+    Returns:
+        _type_: _description_
+    """
     scripted_model.eval()
     with torch.no_grad():
         losses, pred_list = scripted_model(list_chnnl_first_norm_tensors)
@@ -135,9 +149,9 @@ def mrcnn_3_class_inference(list_chnnl_first_norm_tensors, scripted_model, bbox_
     #necessary for torchmetrics
     pred_dict_thresholded = {}
     pred_dict_thresholded['masks'] = torch.stack(high_conf_class_arrs).to(dtype=torch.uint8)
+    pred_dict_thresholded['boxes'] = torch.stack([torch.Tensor(extract_bounding_box(mask)) for mask in pred_dict_thresholded['masks']])
     pred_dict_thresholded['scores'] = torch.stack(pred_dict['scores'])
     pred_dict_thresholded['labels'] = torch.stack(pred_dict['labels'])
-    pred_dict_thresholded['boxes'] = torch.stack(pred_dict['boxes'])
     return pred_dict_thresholded, pred_dict
 
 def mask_similarity(u, v):

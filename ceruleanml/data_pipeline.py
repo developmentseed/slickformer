@@ -45,6 +45,7 @@ def remap_class_dict(class_dict: Dict[str, Dict[str, object]], new_class_list: L
 def stack_to_tensors(gdict):
     gdict['masks'] = torch.stack([torch.tensor(arr) for arr in gdict['masks']]).to(dtype=torch.uint8)
     gdict['labels'] = torch.stack([torch.tensor(arr) for arr in gdict['labels']])
+    gdict['boxes'] = torch.stack([torch.tensor(arr) for arr in gdict['boxes']])
     return gdict
 
 def channel_first_norm_to_tensor(gdict):
