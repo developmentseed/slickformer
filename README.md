@@ -11,7 +11,7 @@ aws s3 sync s3://slickformer/aux_datasets/ data/aux_datasets/
 aws s3 sync s3://slickformer/partition_lists/ data/partition_lists/
 ```
 
-### Running the jupyter server locally with slickformer dependencies to amke the dataset
+### Running the jupyter server locally with slickformer dependencies to make the dataset
 
 Start the docker container, but with the skytruth AWS_PROFILE. this is necessary to create the dataset locally.
 
