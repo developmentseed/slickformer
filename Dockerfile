@@ -9,7 +9,6 @@ RUN apt-get update && apt-get install -y \
     libxml2 \
     git \
     xdg-utils \
-    libjpeg-turbo8 \
     libgl1 -y
 # last two not installed by conda for some reason for opencv
 

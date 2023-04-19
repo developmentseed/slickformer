@@ -146,12 +146,20 @@ def mrcnn_3_class_inference(list_chnnl_first_norm_tensors, scripted_model, bbox_
     pred_dict['labels'] = list(compress(pred_dict['labels'], is_not_empty))
     pred_dict['scores'] = list(compress(pred_dict['scores'], is_not_empty))
     pred_dict['boxes'] = list(compress(pred_dict['boxes'], is_not_empty))
-    #necessary for torchmetrics
+    # necessary for torchmetrics
     pred_dict_thresholded = {}
-    pred_dict_thresholded['masks'] = torch.stack(high_conf_class_arrs).to(dtype=torch.uint8)
-    pred_dict_thresholded['boxes'] = torch.stack([torch.Tensor(extract_bounding_box(mask)) for mask in pred_dict_thresholded['masks']])
-    pred_dict_thresholded['scores'] = torch.stack(pred_dict['scores'])
-    pred_dict_thresholded['labels'] = torch.stack(pred_dict['labels'])
+    
+    if len(high_conf_class_arrs) > 0:
+        pred_dict_thresholded['masks'] = torch.stack(high_conf_class_arrs).to(dtype=torch.uint8)
+        pred_dict_thresholded['boxes'] = torch.stack([torch.Tensor(extract_bounding_box(mask)) for mask in pred_dict_thresholded['masks']])
+        pred_dict_thresholded['scores'] = torch.stack(pred_dict['scores'])
+        pred_dict_thresholded['labels'] = torch.stack(pred_dict['labels'])
+    else:
+        pred_dict_thresholded['masks'] = torch.empty(0, dtype=torch.uint8)
+        pred_dict_thresholded['boxes'] = torch.empty(0, 4)  # Assuming 4 coordinates for bounding boxes
+        pred_dict_thresholded['scores'] = torch.empty(0)
+        pred_dict_thresholded['labels'] = torch.empty(0, dtype=torch.long)  # Assuming labels are integer values
+
     return pred_dict_thresholded, pred_dict
 
 def mask_similarity(u, v):

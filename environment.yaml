@@ -9,7 +9,11 @@ dependencies:
     - boto3
     - dask
     - distributed
+    - fastapi
     - gcc
+    - geojson
+    - geopandas
+    - geoalchemy2
     - graphviz
     - httpx
     - hydra-core
@@ -21,9 +25,8 @@ dependencies:
     - pandas
     - pip
     - python-graphviz
-    - pytorch==2.0
-    - pytorch-lightning==2.0
     - pytorch-cuda==11.7
+    - pysal
     - pystac-client
     - rasterio
     - rioxarray
@@ -31,10 +34,9 @@ dependencies:
     - scikit-learn
     - scipy
     - seaborn
+    - supermercado
     - tensorboard
     - timm
-    - torchdata==0.6
-    - torchvision
     - torchmetrics
     - transformers
     - xbatcher
@@ -44,3 +46,8 @@ dependencies:
         - git+https://github.com/waspinator/pycococreator.git@0.2.1
         - rio-cogeo
         - rio-tiler-pds
+        - torch==2.0
+        - pytorch-lightning==2.0
+        - torchdata==0.6
+        - torchvision
+        - global-land-mask
