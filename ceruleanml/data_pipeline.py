@@ -8,6 +8,16 @@ from itertools import compress
 import numpy as np
 from typing import Dict, List
 import torch
+from pathlib import Path
+import json
+
+def get_src_pths_annotations(data_pth):
+    data_dir = Path(data_pth)
+    l = data_dir/"tiled_images"
+    imgs = list(l.glob("*"))
+    with open(data_dir/"instances_CeruleanCOCO.json", 'r') as f:
+        annotations = json.load(f)
+    return imgs, annotations
 
 def remap_class_dict(class_dict: Dict[str, Dict[str, object]], new_class_list: List[str]) -> Dict[str, Dict[str, object]]:
     """
@@ -139,6 +149,19 @@ class RandomCropByMasks(IterDataPipe):
             t['boxes'] = [extract_bounding_box(mask) for mask in t['masks'] ]
             t['image_name'] = mask_dict['image_name']
             yield t
+
+@functional_datapipe("combine_src_label_dicts")
+class CombineDicts(IterDataPipe):
+    #https://albumentations.ai/docs/getting_started/mask_augmentation/
+    def __init__(self, img_masks_tuple, **kwargs):
+        self.tups =  img_masks_tuple
+        self.kwargs = kwargs
+    def __iter__(self):
+        for src_img, mask_dict in self.tups:
+            mask_dict['boxes'] = [extract_bounding_box(mask) for mask in mask_dict['masks'] ]
+            mask_dict['image'] = src_img
+            yield mask_dict
+
 
 def extract_bounding_box(mask) -> np.ndarray:
     """Extract the bounding box of a mask.

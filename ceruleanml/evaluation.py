@@ -38,3 +38,7 @@ def remap_gt_dict(gt_dict):
     gt_dict['masks'] = list(compress(gt_dict['masks'], is_not_none))
     gt_dict['boxes'] = list(compress(gt_dict['boxes'], is_not_none))
     return stack_tensors(gt_dict)
+
+def stack_boxes(gt_sample):
+    gt_sample['boxes'] = torch.stack([torch.tensor(arr) for arr in gt_sample['boxes']])
+    return gt_sample
