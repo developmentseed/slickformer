@@ -74,11 +74,13 @@ VOLUME  /home/$USERNAME/slickformer
 # Copy the library file to the image
 COPY ceruleanml /home/$USERNAME/slickformer
 COPY setup.py /home/$USERNAME/slickformer
-
+COPY scripts/download_models_and_configs.py /home/$USERNAME/slickformer
 RUN conda run -n slickformer pip install -e .
 
 # so we can activate envs in vscode remote container connection
 RUN conda init
+
+RUN python /home/$USERNAME/slickformer/download_models_and_configs.py
 
 # Start Jupyter Lab
 CMD ["/bin/bash", "-c", "umask 002 && jupyter lab --allow-root --no-browser --ip 0.0.0.0 --port 8888 --notebook-dir=$HOME/slickformer"]

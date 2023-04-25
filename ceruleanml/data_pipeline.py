@@ -10,6 +10,8 @@ from typing import Dict, List
 import torch
 from pathlib import Path
 import json
+from transformers import OneFormerProcessor
+from transformers import OneFormerForUniversalSegmentation
 
 def get_src_pths_annotations(data_pth):
     data_dir = Path(data_pth)
@@ -162,7 +164,38 @@ class CombineDicts(IterDataPipe):
             mask_dict['image'] = src_img
             yield mask_dict
 
+def curried_amax(instance_masks):
+    """
+    squashes the instance masks to semantic masks, prioritizing vessel, then natural, then infra
+    TODO replace with https://github.com/huggingface/transformers/blob/v4.28.1/src/transformers/models/oneformer/image_processing_oneformer.py#L875
+    to treat inputs as instances
+    requires using oneformer image processor instead of OneFormerProcessor
+    """
+    return torch.amax(instance_masks, axis=0)
 
+@functional_datapipe("ofprocessor")
+class OneFormerProcessorDP(IterDataPipe):
+    #https://albumentations.ai/docs/getting_started/mask_augmentation/
+    def __init__(self, sample_dicts, **kwargs):
+        self.sample_dicts =  sample_dicts
+        # todo figure out how to inspect config, the config class repr?
+        # todo this drastically slows everything down
+        dummy_model = OneFormerForUniversalSegmentation.from_pretrained("shi-labs/oneformer_coco_swin_large",  num_labels=3, ignore_mismatched_sizes=True)
+        self.processor = OneFormerProcessor.from_pretrained("shi-labs/oneformer_coco_swin_large",  num_labels=3, ignore_mismatched_sizes=True)
+        # weird design forces us to have to load model here to define num_text 
+        # https://github.com/praeclarumjj3/transformers/blob/b723fbb1713be397d71c6bb56f693a277196d02d/tests/models/oneformer/test_modeling_oneformer.py#L519
+        self.processor.image_processor.num_text = dummy_model.config.num_queries - dummy_model.config.text_encoder_n_ctx
+        self.kwargs = kwargs
+    def __iter__(self):
+        for sample_dict in self.sample_dicts:
+            #todo should this be done upfront for all iamges and masks in the coco dataset? seems like a chore and maybe text embeddings not worth
+            results = self.processor.encode_inputs(images=[sample_dict['image']], segmentation_maps=[curried_amax(sample_dict['masks'])], task_inputs=["panoptic"], return_tensors="pt")
+            results['mask_labels'] = results['mask_labels'][0]
+            results['class_labels'] = results['class_labels'][0]
+            yield results
+
+#potentially just use processor to modify the outputs to pass to model? just get text encodings 
+# but yield instance masks and image since encode process converts semantic masks to list of masks anyway
 def extract_bounding_box(mask) -> np.ndarray:
     """Extract the bounding box of a mask.
     :param mask: HxW numpy array
