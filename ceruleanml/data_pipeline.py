@@ -190,8 +190,10 @@ class OneFormerProcessorDP(IterDataPipe):
         for sample_dict in self.sample_dicts:
             #todo should this be done upfront for all iamges and masks in the coco dataset? seems like a chore and maybe text embeddings not worth
             results = self.processor.encode_inputs(images=[sample_dict['image']], segmentation_maps=[curried_amax(sample_dict['masks'])], task_inputs=["panoptic"], return_tensors="pt")
-            results['mask_labels'] = results['mask_labels'][0]
-            results['class_labels'] = results['class_labels'][0]
+            results['mask_labels'] = results['mask_labels'][0].long()
+            # transformers docs are a bit whack, encode_inputs dict has key for class_labels but this is not a tensor with 
+            # correct shape for the model
+            results['class_labels'] = results['class_labels'][0].long()
             yield results
 
 #potentially just use processor to modify the outputs to pass to model? just get text encodings 

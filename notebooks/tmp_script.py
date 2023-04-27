@@ -18,7 +18,8 @@ from ceruleanml import evaluation
 from ceruleanml.data_pipeline import put_image_in_dict, get_src_pths_annotations, channel_first_norm_to_tensor, stack_tensors
 from transformers import AutoModelForUniversalSegmentation, OneFormerConfig
 import skimage.io as skio
-
+import os
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 if not sys.warnoptions:
     warnings.simplefilter("ignore")
 # Set the random seed
@@ -57,7 +58,7 @@ train_labels_pipe_processed = (
 # %%
 train_dp = (
     train_source_pipe_processed.zip(train_labels_pipe_processed)
-    .random_crop_mask_if_exists(2000,2000)
+    .random_crop_mask_if_exists(512,512)
     .map(channel_first_norm_to_tensor)
     .map(stack_tensors)
 )
@@ -71,8 +72,21 @@ torchdata.datapipes.utils.to_graph(dp=train_dp)
 # %%
 import matplotlib.pyplot as plt
 
+def combine_dicts(dict_list):
+    combined_dict = {}
+    for d in dict_list:
+        for key, value in d.items():
+            if key not in combined_dict:
+                combined_dict[key] = []
+            combined_dict[key].append(value)
+    for key, value in combined_dict.items():
+        keys_with_lists = ["text_inputs"]
+        if key not in keys_with_lists:
+            combined_dict[key] = torch.vstack(combined_dict[key])
+    return combined_dict
+
 class OneFormerDataModule(pl.LightningDataModule):
-    def __init__(self, train_dir, val_dir, test_dir, batch_size, num_workers, crop_size=2000):
+    def __init__(self, train_dir, val_dir, test_dir, batch_size, num_workers, crop_size=512):
         super().__init__()
         self.train_dir, self.val_dir, self.test_dir = train_dir, val_dir, test_dir
         self.bs = batch_size
@@ -182,19 +196,19 @@ class OneFormerDataModule(pl.LightningDataModule):
         plt.tight_layout()
 
     def train_dataloader(self):
-        return DataLoader(dataset=self.train_dp.ofprocessor().batch(self.bs), batch_size=None)
+        return DataLoader(dataset=self.train_dp.ofprocessor().batch(self.bs).map(combine_dicts), batch_size=None)
 
     def val_dataloader(self):
-        return DataLoader(dataset=self.val_dp.ofprocessor().batch(self.bs), batch_size=None)
+        return DataLoader(dataset=self.val_dp.ofprocessor().batch(self.bs).map(combine_dicts), batch_size=None)
 
     def test_dataloader(self):
-        return DataLoader(dataset=self.test_dp.ofprocessor().batch(self.bs), batch_size=None)
+        return DataLoader(dataset=self.test_dp.ofprocessor().batch(self.bs).map(combine_dicts), batch_size=None)
 
     def predict_dataloader(self):
-        return DataLoader(dataset=self.test_dp.ofprocessor().batch(self.bs), batch_size=None)
+        return DataLoader(dataset=self.test_dp.ofprocessor().batch(self.bs).map(combine_dicts), batch_size=None)
 
 # %%
-onef_dm = OneFormerDataModule(train_dir, val_dir, test_dir, batch_size=4, num_workers=1, crop_size=2000)
+onef_dm = OneFormerDataModule(train_dir, val_dir, test_dir, batch_size=1, num_workers=1, crop_size=512)
 
 # %%
 onef_dm.setup(stage="train") #what's the purpose of stage?
@@ -208,21 +222,6 @@ onef_dm.show_batch(0)
 for i in onef_dm.train_dataloader():
     i
     break
-
-# %%
-i[3].pixel_values.shape
-
-# %%
-i[3]['mask_labels']
-
-# %%
-i[0]['pixel_mask'].unique()
-
-# %%
-i[0].keys()
-
-# %%
-i[0]['mask_labels'][0].shape
 
 # %%
 from transformers import AdamW
@@ -264,7 +263,8 @@ class OneFormerLightningModel(pl.LightningModule):
     def one_step(self, batch):
         # potential edge case, we squash instance masks to semantic masks. it's possible to lose 
         # mask label 3 from mask but not class labels since we don't edit class labels
-        loss, output = self(pixel_values=batch["pixel_values"], mask_labels=batch["mask_labels"], class_labels=batch['class_labels'], text_inputs=batch['text_inputs'], task_inputs=batch['task_inputs'])
+        #TODO need to collate dictionaries after batching and add a step after .batch()
+        loss, output = self.model(pixel_values=batch["pixel_values"], mask_labels=batch["mask_labels"], class_labels=batch['class_labels'].squeeze(), text_inputs=batch['text_inputs'][0], task_inputs=batch['task_inputs'].float())
         return loss
     def configure_optimizers(self):
         """Prepare optimizer and schedule (linear warmup and decay)"""
