@@ -18,17 +18,18 @@ Start the docker container, but with the skytruth AWS_PROFILE. this is necessary
 ```
 docker build -t slickserver .
 ```
-Don't use `--gpus all` if you're doing this on a machine without a GPU
+Don't use `--gpus all` if you're doing this on a machine without a GPU. and Omit the transformers line if not editing transformers lib
 ```
-docker run -it --rm \
+ docker run -it --rm \
     -v $HOME/.aws:/root/.aws \
-    -v "$(pwd)":/slickformer \
+    -v "$(pwd)":/home/work/slickformer \
+    -v "$(pwd)/../transformers":/home/work/transformers \
     -p 8888:8888 \
-    -e AWS_PROFILE=skytruth \
+    -e AWS_PROFILE=devseed \
     --gpus all slickserver
 ```
 
-this wills tart a jupyter server. You can connect to the container with a VSCode Remote session for the next step.
+this will start a jupyter server. You can connect to the container with a VSCode Remote session for the next step.
 
 Then, from the docker container with the slickformer conda environment activated, run
 

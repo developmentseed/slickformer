@@ -83,4 +83,4 @@ RUN conda init
 RUN python /home/$USERNAME/slickformer/download_models_and_configs.py
 
 # Start Jupyter Lab
-CMD ["/bin/bash", "-c", "umask 002 && jupyter lab --allow-root --no-browser --ip 0.0.0.0 --port 8888 --notebook-dir=$HOME/slickformer"]
+CMD ["/bin/bash", "-c", "umask 002 && jupyter lab --allow-root --no-browser --ip 0.0.0.0 --port 8888 --notebook-dir=$HOME/"]

@@ -19,7 +19,8 @@ from ceruleanml.data_pipeline import put_image_in_dict, get_src_pths_annotations
 from transformers import Mask2FormerForUniversalSegmentation, Mask2FormerConfig
 import skimage.io as skio
 import os
-os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+#for debugging
+# os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 if not sys.warnoptions:
     warnings.simplefilter("ignore")
 # Set the random seed
@@ -204,7 +205,7 @@ class Mask2FormerDataModule(pl.LightningDataModule):
 
 # %%
 data_config_path= "../custom_processors/preprocessor_config.json"
-onef_dm = Mask2FormerDataModule(data_config_path, train_dir, val_dir, test_dir, batch_size=6, num_workers=1, crop_size=512)
+onef_dm = Mask2FormerDataModule(data_config_path, train_dir, val_dir, test_dir, batch_size=1, num_workers=os.cpu_count(), crop_size=1024)
 
 # %%
 onef_dm.setup(stage="train") #what's the purpose of stage?
@@ -303,11 +304,11 @@ model = Mask2FormerLightningModel(model_config_path)
 trainer.fit(model, datamodule=onef_dm)
 
 # %%
-from transformers import  AutoImageProcessor, MaskFormerForInstanceSegmentation
-image_processor = AutoImageProcessor.from_pretrained("facebook/maskformer-swin-base-coco", num_labels=3)
-instance_inputs = image_processor(images=data['image'], return_tensors="pt")
-for k,v in instance_inputs.items():
-  print(k,v.shape)
+# from transformers import  AutoImageProcessor, MaskFormerForInstanceSegmentation
+# image_processor = AutoImageProcessor.from_pretrained("facebook/maskformer-swin-base-coco", num_labels=3)
+# instance_inputs = image_processor(images=data['image'], return_tensors="pt")
+# for k,v in instance_inputs.items():
+#   print(k,v.shape)
 
 
 # from collections import defaultdict

@@ -289,11 +289,9 @@ class Mask2FormerProcessorDP(IterDataPipe):
                 sample_dict['labels'] = sample_dict['labels'][0].unsqueeze(0)
             instance_mask, instance_id_to_semantic_id = masks_to_instance_mask_and_dict(sample_dict['masks'], sample_dict['labels'])
             assert len(np.unique(instance_mask)) > 1
-            results = self.processor(images=[sample_dict['image']], segmentation_maps=[instance_mask], instance_id_to_semantic_id= instance_id_to_semantic_id, task_inputs=["panoptic"], return_tensors="pt")
-            results['class_labels'] = results['class_labels'][0].unsqueeze(0)
-            results['class_labels'] = torch.nn.functional.one_hot(results['class_labels'], num_classes=4)
-            results['mask_labels'] = results['mask_labels'][0].unsqueeze(0)
-            yield results
+            inputs = self.processor(images=[sample_dict['image']], segmentation_maps=[instance_mask], instance_id_to_semantic_id= instance_id_to_semantic_id, task_inputs=["panoptic"], return_tensors="pt")
+            inputs = {k: v.squeeze() if isinstance(v, torch.Tensor) else v[0] for k,v in inputs.items()}
+            yield inputs
 
 #potentially just use processor to modify the outputs to pass to model? just get text encodings 
 # but yield instance masks and image since encode process converts semantic masks to list of masks anyway
