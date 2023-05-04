@@ -263,9 +263,8 @@ class Mask2FormerLightningModel(pl.LightningModule):
     def one_step(self, batch):
         # potential edge case, we squash instance masks to semantic masks. it's possible to lose 
         # mask label 3 from mask but not class labels since we don't edit class labels
-        #TODO need to collate dictionaries after batching and add a step after .batch()
         #self.model.train() # for some reason this needs to be set here, not picked up in init
-        loss, output = self.model(pixel_values=batch["pixel_values"], mask_labels=batch["mask_labels"], class_labels=batch['class_labels'])
+        loss, output = self.model(pixel_values=batch["pixel_values"], mask_labels=batch["mask_labels"], class_labels=batch['class_labels'].squeeze())
         return loss
     
     def configure_optimizers(self):
