@@ -72,16 +72,13 @@ torchdata.datapipes.utils.to_graph(dp=train_dp)
 # %%
 import matplotlib.pyplot as plt
 
-def combine_dicts_in_batch(dict_list):
-    combined_dict = {}
-    for d in dict_list:
-        for key, value in d.items():
-            if key not in combined_dict:
-                combined_dict[key] = []
-            combined_dict[key].append(value)
-    for key, value in combined_dict.items():
-        combined_dict[key] = torch.vstack(combined_dict[key])
-    return combined_dict
+def collate_fn(batch):
+    pixel_values = torch.stack([example["pixel_values"] for example in batch])
+    pixel_mask = torch.stack([example["pixel_mask"] for example in batch])
+    class_labels = [example["class_labels"] for example in batch]
+    mask_labels = [example["mask_labels"] for example in batch]
+    return {"pixel_values": pixel_values, "pixel_mask": pixel_mask, "class_labels": class_labels, "mask_labels": mask_labels}
+
 
 class Mask2FormerDataModule(pl.LightningDataModule):
     def __init__(self, config_path, train_dir, val_dir, test_dir, batch_size, num_workers, crop_size=512):
@@ -194,16 +191,16 @@ class Mask2FormerDataModule(pl.LightningDataModule):
         plt.tight_layout()
 
     def train_dataloader(self):
-        return DataLoader(dataset=self.train_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(combine_dicts_in_batch), batch_size=None)
+        return DataLoader(dataset=self.train_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
 
     def val_dataloader(self):
-        return DataLoader(dataset=self.val_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(combine_dicts_in_batch), batch_size=None)
+        return DataLoader(dataset=self.val_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
 
     def test_dataloader(self):
-        return DataLoader(dataset=self.test_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(combine_dicts_in_batch), batch_size=None)
+        return DataLoader(dataset=self.test_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
 
     def predict_dataloader(self):
-        return DataLoader(dataset=self.test_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(combine_dicts_in_batch), batch_size=None)
+        return DataLoader(dataset=self.test_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
 
 # %%
 data_config_path= "../custom_processors/preprocessor_config.json"
@@ -264,8 +261,8 @@ class Mask2FormerLightningModel(pl.LightningModule):
         # potential edge case, we squash instance masks to semantic masks. it's possible to lose 
         # mask label 3 from mask but not class labels since we don't edit class labels
         #self.model.train() # for some reason this needs to be set here, not picked up in init
-        loss, output = self.model(pixel_values=batch["pixel_values"], mask_labels=batch["mask_labels"], class_labels=batch['class_labels'].squeeze())
-        return loss
+        outputs = self.model(pixel_values=batch["pixel_values"], mask_labels=batch["mask_labels"], class_labels=batch['class_labels'])
+        return outputs.loss
     
     def configure_optimizers(self):
         """Prepare optimizer and schedule (linear warmup and decay)"""
