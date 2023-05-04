@@ -15,8 +15,8 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import DeviceStatsMonitor
 from ceruleanml import plot
 from ceruleanml import evaluation
-from ceruleanml.data_pipeline import put_image_in_dict, get_src_pths_annotations, channel_first_norm_to_tensor, stack_tensors
-from transformers import AutoModelForUniversalSegmentation, OneFormerConfig
+from ceruleanml.data_pipeline import put_image_in_dict, get_src_pths_annotations
+from transformers import Mask2FormerForUniversalSegmentation, Mask2FormerConfig
 import skimage.io as skio
 import os
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
@@ -59,8 +59,8 @@ train_labels_pipe_processed = (
 train_dp = (
     train_source_pipe_processed.zip(train_labels_pipe_processed)
     .random_crop_mask_if_exists(512,512)
-    .map(channel_first_norm_to_tensor)
-    .map(stack_tensors)
+    .channel_first_norm_to_tensor()
+    .remap_remove()
 )
 
 # %%
@@ -72,7 +72,7 @@ torchdata.datapipes.utils.to_graph(dp=train_dp)
 # %%
 import matplotlib.pyplot as plt
 
-def combine_dicts(dict_list):
+def combine_dicts_in_batch(dict_list):
     combined_dict = {}
     for d in dict_list:
         for key, value in d.items():
@@ -80,18 +80,17 @@ def combine_dicts(dict_list):
                 combined_dict[key] = []
             combined_dict[key].append(value)
     for key, value in combined_dict.items():
-        keys_with_lists = ["text_inputs"]
-        if key not in keys_with_lists:
-            combined_dict[key] = torch.vstack(combined_dict[key])
+        combined_dict[key] = torch.vstack(combined_dict[key])
     return combined_dict
 
-class OneFormerDataModule(pl.LightningDataModule):
-    def __init__(self, train_dir, val_dir, test_dir, batch_size, num_workers, crop_size=512):
+class Mask2FormerDataModule(pl.LightningDataModule):
+    def __init__(self, config_path, train_dir, val_dir, test_dir, batch_size, num_workers, crop_size=512):
         super().__init__()
         self.train_dir, self.val_dir, self.test_dir = train_dir, val_dir, test_dir
         self.bs = batch_size
         self.num_workers = num_workers
         self.crop_size = crop_size
+        self.config_path = config_path
 
     def setup(self, stage):
         if stage is not None:  # train/val/test/predict
@@ -108,8 +107,8 @@ class OneFormerDataModule(pl.LightningDataModule):
             self.train_dp = (
                 train_source_pipe_processed.zip(train_labels_pipe_processed)
                 .random_crop_mask_if_exists(self.crop_size, self.crop_size)
-                .map(channel_first_norm_to_tensor)
-                .map(stack_tensors)
+                .channel_first_norm_to_tensor()
+                .remap_remove()
             )
             # TODO if val processing mirrors train processing, this could be factored out to a func
             val_imgs, val_annotations = get_src_pths_annotations(self.val_dir)
@@ -125,8 +124,8 @@ class OneFormerDataModule(pl.LightningDataModule):
             self.val_dp = (
                 val_source_pipe_processed.zip(val_labels_pipe_processed)
                 .random_crop_mask_if_exists(self.crop_size,self.crop_size)
-                .map(channel_first_norm_to_tensor)
-                .map(stack_tensors)
+                .channel_first_norm_to_tensor()
+                .remap_remove()
             )
 
             test_imgs, test_annotations = get_src_pths_annotations(self.test_dir)
@@ -136,7 +135,6 @@ class OneFormerDataModule(pl.LightningDataModule):
             test_i_coco_pipe.get_scene_paths(self.test_dir) # get source items from the collection
                 .read_tiff()
                 .map(put_image_in_dict)
-                .map(channel_first_norm_to_tensor)
             )
             test_labels_pipe_processed = (
                 test_l_coco_pipe.decode_masks()
@@ -144,8 +142,8 @@ class OneFormerDataModule(pl.LightningDataModule):
             self.test_dp = (
             test_source_pipe_processed.zip(test_labels_pipe_processed)
             .combine_src_label_dicts() # we don't crop for the test set TODO, do we also not crop for validation?
-            .map(channel_first_norm_to_tensor)
-            .map(stack_tensors)
+            .channel_first_norm_to_tensor()
+            .remap_remove()
             )
 
     def graph_dp(self):
@@ -196,19 +194,20 @@ class OneFormerDataModule(pl.LightningDataModule):
         plt.tight_layout()
 
     def train_dataloader(self):
-        return DataLoader(dataset=self.train_dp.ofprocessor().batch(self.bs).map(combine_dicts), batch_size=None)
+        return DataLoader(dataset=self.train_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(combine_dicts_in_batch), batch_size=None)
 
     def val_dataloader(self):
-        return DataLoader(dataset=self.val_dp.ofprocessor().batch(self.bs).map(combine_dicts), batch_size=None)
+        return DataLoader(dataset=self.val_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(combine_dicts_in_batch), batch_size=None)
 
     def test_dataloader(self):
-        return DataLoader(dataset=self.test_dp.ofprocessor().batch(self.bs).map(combine_dicts), batch_size=None)
+        return DataLoader(dataset=self.test_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(combine_dicts_in_batch), batch_size=None)
 
     def predict_dataloader(self):
-        return DataLoader(dataset=self.test_dp.ofprocessor().batch(self.bs).map(combine_dicts), batch_size=None)
+        return DataLoader(dataset=self.test_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(combine_dicts_in_batch), batch_size=None)
 
 # %%
-onef_dm = OneFormerDataModule(train_dir, val_dir, test_dir, batch_size=1, num_workers=1, crop_size=512)
+data_config_path= "../custom_processors/preprocessor_config.json"
+onef_dm = Mask2FormerDataModule(data_config_path, train_dir, val_dir, test_dir, batch_size=6, num_workers=1, crop_size=512)
 
 # %%
 onef_dm.setup(stage="train") #what's the purpose of stage?
@@ -238,10 +237,10 @@ class Backbone(nn.Module):
     def forward(self, xb):
         return self.backbone(xb)
 
-class OneFormerLightningModel(pl.LightningModule):
+class Mask2FormerLightningModel(pl.LightningModule):
     def __init__(
         self,
-        num_classes=3,
+        config_path,
         learning_rate: float = 2e-5,
         adam_epsilon: float = 1e-8,
         warmup_steps: int = 0,
@@ -249,13 +248,14 @@ class OneFormerLightningModel(pl.LightningModule):
     ):
         super().__init__()
         self.save_hyperparameters()  # saves all hparams as self.hparams
-        # this allows num_classes to differ from coco
-        # https://github.com/huggingface/transformers/pull/17257/files
-        self.config = OneFormerConfig.from_pretrained("shi-labs/oneformer_coco_swin_large", num_labels=num_classes, ignore_mismatched_sizes=True) 
         # can try other universal segmentation models: https://github.com/huggingface/transformers/pull/20766/files#r1050493186
-        self.model = AutoModelForUniversalSegmentation.from_pretrained("shi-labs/oneformer_coco_swin_large", config = self.config, ignore_mismatched_sizes=True)
+        config = Mask2FormerConfig.from_pretrained(config_path, ignore_mismatched_sizes=True) 
+        self.model = Mask2FormerForUniversalSegmentation.from_pretrained("facebook/mask2former-swin-small-cityscapes-panoptic", config=config, cache_dir="./model_cache", ignore_mismatched_sizes=True)
         #by default the above method sets eval mode, set to training
         self.model.train()
+        # Move the model to the default CUDA device (if available)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.to(device)
 
     def forward(self, xb):
         return self.model(xb)
@@ -264,8 +264,10 @@ class OneFormerLightningModel(pl.LightningModule):
         # potential edge case, we squash instance masks to semantic masks. it's possible to lose 
         # mask label 3 from mask but not class labels since we don't edit class labels
         #TODO need to collate dictionaries after batching and add a step after .batch()
-        loss, output = self.model(pixel_values=batch["pixel_values"], mask_labels=batch["mask_labels"], class_labels=batch['class_labels'].squeeze(), text_inputs=batch['text_inputs'][0], task_inputs=batch['task_inputs'].float())
+        #self.model.train() # for some reason this needs to be set here, not picked up in init
+        loss, output = self.model(pixel_values=batch["pixel_values"], mask_labels=batch["mask_labels"], class_labels=batch['class_labels'])
         return loss
+    
     def configure_optimizers(self):
         """Prepare optimizer and schedule (linear warmup and decay)"""
         optimizer = AdamW(self.model.parameters(), lr=self.hparams.learning_rate, eps=self.hparams.adam_epsilon)
@@ -295,26 +297,14 @@ trainer = Trainer(
 )
 
 # %%
-model = OneFormerLightningModel()
+model_config_path= "../custom_models/config.json"
+model = Mask2FormerLightningModel(model_config_path)
 
 # %% [markdown]
 # need to run this in terminal because for some reason created dirs are owned by root even though docker container built for user 1000
 
 # %%
-
-
 trainer.fit(model, datamodule=onef_dm)
-
-# %%
-
-
-# %%
-from transformers import OneFormerProcessor
-processor = OneFormerProcessor.from_pretrained("shi-labs/oneformer_coco_swin_tiny",  num_labels=3)
-
-panoptic_inputs = processor(images=data['image'], segmentation_maps=data['masks'], task_inputs=["panoptic"], return_tensors="pt")
-for k,v in panoptic_inputs.items():
-  print(k,v.shape)
 
 # %%
 from transformers import  AutoImageProcessor, MaskFormerForInstanceSegmentation
@@ -323,94 +313,66 @@ instance_inputs = image_processor(images=data['image'], return_tensors="pt")
 for k,v in instance_inputs.items():
   print(k,v.shape)
 
-# %%
-model = MaskFormerForInstanceSegmentation.from_pretrained("facebook/maskformer-swin-base-coco")
 
-# %%
-v
+# from collections import defaultdict
+# import matplotlib.pyplot as plt
+# from matplotlib import cm
+# import matplotlib.patches as mpatches
 
-# %%
-model = AutoModelForUniversalSegmentation.from_pretrained("shi-labs/oneformer_coco_swin_large")
-
-# %%
-type(model)
-
-# %%
-dir(model.model)
-
-# %%
-import torch
-
-# forward pass
-with torch.no_grad():
-    outputs = model(**panoptic_inputs)
-
-# %%
-
-panoptic_segmentation = processor.post_process_panoptic_segmentation(outputs, target_sizes=[image.size[::-1]])[0]
-print(panoptic_segmentation.keys())
-
-# %%
-
-from collections import defaultdict
-import matplotlib.pyplot as plt
-from matplotlib import cm
-import matplotlib.patches as mpatches
-
-def draw_panoptic_segmentation(segmentation, segments_info):
-    # get the used color map
-    viridis = cm.get_cmap('viridis', torch.max(segmentation))
-    fig, ax = plt.subplots()
-    ax.imshow(segmentation)
-    instances_counter = defaultdict(int)
-    handles = []
-    # for each segment, draw its legend
-    for segment in segments_info:
-        segment_id = segment['id']
-        segment_label_id = segment['label_id']
-        segment_label = model.config.id2label[segment_label_id]
-        label = f"{segment_label}-{instances_counter[segment_label_id]}"
-        instances_counter[segment_label_id] += 1
-        color = viridis(segment_id)
-        handles.append(mpatches.Patch(color=color, label=label))
+# def draw_panoptic_segmentation(segmentation, segments_info):
+#     # get the used color map
+#     viridis = cm.get_cmap('viridis', torch.max(segmentation))
+#     fig, ax = plt.subplots()
+#     ax.imshow(segmentation)
+#     instances_counter = defaultdict(int)
+#     handles = []
+#     # for each segment, draw its legend
+#     for segment in segments_info:
+#         segment_id = segment['id']
+#         segment_label_id = segment['label_id']
+#         segment_label = model.config.id2label[segment_label_id]
+#         label = f"{segment_label}-{instances_counter[segment_label_id]}"
+#         instances_counter[segment_label_id] += 1
+#         color = viridis(segment_id)
+#         handles.append(mpatches.Patch(color=color, label=label))
         
-    ax.legend(handles=handles)
-    plt.savefig('cats_panoptic.png')
+#     ax.legend(handles=handles)
+#     plt.savefig('cats_panoptic.png')
 
-draw_panoptic_segmentation(**panoptic_segmentation)
+# draw_panoptic_segmentation(**panoptic_segmentation)
 
-# %%
-
-
-# %%
+# # %%
 
 
-# %%
+# # %%
 
 
-# %%
+# # %%
 
 
-# %%
+# # %%
 
 
-# %% [markdown]
-# Groundtruth datapipe with non cropped images. We will use these for inference with the trained model.
+# # %%
 
-# %%
-gt_train_dp = (train_dp
-                    .map(evaluation.remap_gt_dict)
-                    .map(evaluation.stack_boxes)
-)
 
-# %%
-from torchmetrics import detection
+# # %% [markdown]
+# # Groundtruth datapipe with non cropped images. We will use these for inference with the trained model.
 
-m = detection.mean_ap.MeanAveragePrecision(box_format='xyxy', iou_type='bbox', iou_thresholds=[.5], rec_thresholds=None, max_detection_thresholds=None, class_metrics=True)
+# # %%
+# gt_train_dp = (train_dp
+#                     .map(evaluation.remap_gt_dict)
+#                     .map(evaluation.stack_boxes)
+# )
 
-m.update(preds=[pred_dict_thresholded_nms], target=[test_sample])
+# # %%
+# from torchmetrics import detection
 
-from pprint import pprint
-pprint(m.compute())
+# m = detection.mean_ap.MeanAveragePrecision(box_format='xyxy', iou_type='bbox', iou_thresholds=[.5], rec_thresholds=None, max_detection_thresholds=None, class_metrics=True)
+
+# m.update(preds=[pred_dict_thresholded_nms], target=[test_sample])
+
+# from pprint import pprint
+# pprint(m.compute())
 
 

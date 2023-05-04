@@ -65,3 +65,18 @@ def plot_instance_masks(img: Union[str, np.ndarray, torch.Tensor], mask_arrs: li
     ax.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1, 0.5))
 
     plt.show()
+
+
+def save_bw_image(array, output_filename):
+    # Convert input to a NumPy array if it's a torch.Tensor
+    if isinstance(array, torch.Tensor):
+        array = array.numpy()
+
+    # Convert the array to a binary image
+    binary_image = (array > 0).astype(np.uint8) * 255
+
+    # Create a PIL image from the binary image
+    img = Image.fromarray(binary_image, mode="L")
+
+    # Save the PIL image as a black and white PNG
+    img.save(output_filename)

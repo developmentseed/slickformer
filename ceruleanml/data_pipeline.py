@@ -10,8 +10,41 @@ from typing import Dict, List
 import torch
 from pathlib import Path
 import json
-from transformers import OneFormerProcessor
-from transformers import OneFormerForUniversalSegmentation
+from transformers import AutoImageProcessor
+from itertools import compress
+
+def three_class_remap(class_id):
+    """
+    Remap 6 classes from the class_dict to more simple categories. So we go from this
+
+    [{'supercategory': 'slick', 'id': 0, 'name': 'background'}, # TODO this is a quantitatively inconsequential bug that this is include din the coco metadata
+    {'supercategory': 'slick', 'id': 1, 'name': 'infra_slick'},
+    {'supercategory': 'slick', 'id': 2, 'name': 'natural_seep'},
+    {'supercategory': 'slick', 'id': 3, 'name': 'coincident_vessel'},
+    {'supercategory': 'slick', 'id': 4, 'name': 'recent_vessel'},
+    {'supercategory': 'slick', 'id': 5, 'name': 'old_vessel'},
+    {'supercategory': 'slick', 'id': 6, 'name': 'ambiguous'}]
+
+    to this
+
+    [{'supercategory': 'slick', 'id': 0, 'name': 'background'},
+    {'supercategory': 'slick', 'id': 1, 'name': 'infra_slick'},
+    {'supercategory': 'slick', 'id': 2, 'name': 'natural_seep'},
+    {'supercategory': 'slick', 'id': 3, 'name': 'coincident_vessel'}]
+    """
+    assert class_id != 0 # annotations should not be background class
+    if class_id == 1 or class_id ==2:
+        return class_id
+    elif class_id in [3,4,5]:
+        return 3
+    elif class_id == 6:
+        return np.nan # denotes that this should be removed. we only keep ambiguous for evaluation.
+    else:
+        raise ValueError("Class IDs for CV2 groundtruth should be between 1 and 6.")
+
+def stack_boxes(gt_sample):
+    gt_sample['boxes'] = torch.stack([torch.tensor(arr) for arr in gt_sample['boxes']])
+    return gt_sample
 
 def get_src_pths_annotations(data_pth):
     data_dir = Path(data_pth)
@@ -58,13 +91,6 @@ def stack_tensors(gdict):
     gdict['masks'] = torch.stack([torch.tensor(arr) for arr in gdict['masks']]).to(dtype=torch.uint8)
     gdict['labels'] = torch.stack([torch.tensor(arr) for arr in gdict['labels']])
     gdict['boxes'] = torch.stack([torch.tensor(arr) for arr in gdict['boxes']])
-    return gdict
-
-def channel_first_norm_to_tensor(gdict):
-    # channel first needs to happen after pil crop
-    # norm is faster if applied post pil crop by about 1 second
-    gdict.update({"image": torch.Tensor(np.moveaxis(gdict['image'],2,0) / 255)})
-    # gdict = stack_tensors(gdict)
     return gdict
 
 def put_image_in_dict(image):
@@ -152,6 +178,19 @@ class RandomCropByMasks(IterDataPipe):
             t['image_name'] = mask_dict['image_name']
             yield t
 
+@functional_datapipe("channel_first_norm_to_tensor")
+class ChannelFirstNormToTensor(IterDataPipe):
+    def __init__(self, source_dp):
+        self.source_dp = source_dp
+
+    def __iter__(self):
+        for gdict in self.source_dp:
+            gdict.update({"image": torch.Tensor(np.moveaxis(gdict['image'], 2, 0) / 255)})
+            yield gdict
+
+    def __len__(self):
+        return len(self.source_dp)
+
 @functional_datapipe("combine_src_label_dicts")
 class CombineDicts(IterDataPipe):
     #https://albumentations.ai/docs/getting_started/mask_augmentation/
@@ -164,36 +203,96 @@ class CombineDicts(IterDataPipe):
             mask_dict['image'] = src_img
             yield mask_dict
 
-def curried_amax(instance_masks):
-    """
-    squashes the instance masks to semantic masks, prioritizing vessel, then natural, then infra
-    TODO replace with https://github.com/huggingface/transformers/blob/v4.28.1/src/transformers/models/oneformer/image_processing_oneformer.py#L875
-    to treat inputs as instances
-    requires using oneformer image processor instead of OneFormerProcessor
-    """
-    return torch.amax(instance_masks, axis=0)
 
-@functional_datapipe("ofprocessor")
-class OneFormerProcessorDP(IterDataPipe):
+@functional_datapipe("remap_remove")
+class RemapAndRemoveAmbiguous(IterDataPipe):
     #https://albumentations.ai/docs/getting_started/mask_augmentation/
     def __init__(self, sample_dicts, **kwargs):
         self.sample_dicts =  sample_dicts
-        # todo figure out how to inspect config, the config class repr?
-        # todo this drastically slows everything down
-        dummy_model = OneFormerForUniversalSegmentation.from_pretrained("shi-labs/oneformer_coco_swin_large",  num_labels=3, ignore_mismatched_sizes=True)
-        self.processor = OneFormerProcessor.from_pretrained("shi-labs/oneformer_coco_swin_large",  num_labels=3, ignore_mismatched_sizes=True)
-        # weird design forces us to have to load model here to define num_text 
-        # https://github.com/praeclarumjj3/transformers/blob/b723fbb1713be397d71c6bb56f693a277196d02d/tests/models/oneformer/test_modeling_oneformer.py#L519
-        self.processor.image_processor.num_text = dummy_model.config.num_queries - dummy_model.config.text_encoder_n_ctx
+        self.kwargs = kwargs
+    def __iter__(self):
+        """Removes samples with the ambgiuous class and empty samples"""
+        for gt_dict in self.sample_dicts:  
+            remapped_labels = np.array([three_class_remap(l) for l in gt_dict['labels']])
+            is_not_none = [np.logical_not(np.isnan(l)) for l in remapped_labels]
+            gt_dict['labels'] = list(compress(remapped_labels, is_not_none))
+            gt_dict['masks'] = list(compress(gt_dict['masks'], is_not_none))
+            gt_dict['boxes'] = list(compress(gt_dict['boxes'], is_not_none))
+            gt_dict['masks'] = [(mask > 0) * remapped_labels[i] for i, mask in enumerate(gt_dict['masks'])]
+            if np.all(is_not_none) and len(remapped_labels) > 0:
+                assert gt_dict['labels'] is not []
+                assert gt_dict['masks'] is not []
+                assert gt_dict['boxes'] is not []
+                gt_dict = stack_tensors(gt_dict)
+                yield gt_dict
+
+def curried_amax(instance_masks):
+    """
+    squashes the instance masks to semantic masks, prioritizing vessel, then natural, then infra
+    """
+    return torch.amax(instance_masks, axis=0)
+
+def all_arrays_equal(mask_arrays):
+    # Check if there's at least two arrays in the list
+    if len(mask_arrays) < 2:
+        return False
+
+    # Compare each array to the first one
+    first_array = mask_arrays[0]
+    for array in mask_arrays[1:]:
+        if np.array_equal(first_array, array):
+            return True
+
+    return False
+
+def masks_to_instance_mask_and_dict(mask_arrays, class_ids, starting_instance_id=2):
+    """Instead of squashing instance masks, combines instance masks into an instance mask 
+    and return it plus dict mapping instance ids to class ids.
+
+    Args:
+        mask_arrays (_type_): _description_
+        class_ids (_type_): _description_
+        starting_instance_id (int, optional): _description_. Defaults to 1.
+
+    Returns:
+        _type_: _description_
+    """
+    instance_mask = torch.zeros_like(mask_arrays[0], dtype=torch.int32)
+    instance_id_to_semantic_id = {}
+
+    for i, (mask, class_id) in enumerate(zip(mask_arrays, class_ids), start=starting_instance_id):
+        instance_mask[mask > 0] = i
+        instance_id_to_semantic_id[i] = class_id + 1 #hack to deal with processor quirk
+    
+    if all_arrays_equal(mask_arrays):
+        raise ValueError("Masks should not be identical for the same image!")
+
+    return instance_mask, instance_id_to_semantic_id
+
+
+@functional_datapipe("m2fprocessor")
+class Mask2FormerProcessorDP(IterDataPipe):
+    #https://albumentations.ai/docs/getting_started/mask_augmentation/
+    def __init__(self, sample_dicts, config_path, **kwargs):
+        self.sample_dicts =  sample_dicts
+        # TODO doesn't appear to be any way to use lcoal configs with this class, it tries to pull from repo and use class info from repo.
+        # TODO https://pyimagesearch.com/2023/03/13/train-a-maskformer-segmentation-model-with-hugging-face-transformers/
+        self.processor = AutoImageProcessor.from_pretrained(config_path, ignore_mismatched_sizes=True)
         self.kwargs = kwargs
     def __iter__(self):
         for sample_dict in self.sample_dicts:
-            #todo should this be done upfront for all iamges and masks in the coco dataset? seems like a chore and maybe text embeddings not worth
-            results = self.processor.encode_inputs(images=[sample_dict['image']], segmentation_maps=[curried_amax(sample_dict['masks'])], task_inputs=["panoptic"], return_tensors="pt")
-            results['mask_labels'] = results['mask_labels'][0].long()
-            # transformers docs are a bit whack, encode_inputs dict has key for class_labels but this is not a tensor with 
-            # correct shape for the model
-            results['class_labels'] = results['class_labels'][0].long()
+            # https://pyimagesearch.com/2023/03/13/train-a-maskformer-segmentation-model-with-hugging-face-transformers/
+            # we use pixel wise class annotations as input
+            # need to use instance masks
+            if all_arrays_equal(sample_dict['masks']): #TODO hack to get rid of duplicate masks
+                sample_dict['masks'] = sample_dict['masks'][0].unsqueeze(0)
+                sample_dict['labels'] = sample_dict['labels'][0].unsqueeze(0)
+            instance_mask, instance_id_to_semantic_id = masks_to_instance_mask_and_dict(sample_dict['masks'], sample_dict['labels'])
+            assert len(np.unique(instance_mask)) > 1
+            results = self.processor(images=[sample_dict['image']], segmentation_maps=[instance_mask], instance_id_to_semantic_id= instance_id_to_semantic_id, task_inputs=["panoptic"], return_tensors="pt")
+            results['class_labels'] = results['class_labels'][0].unsqueeze(0)
+            results['class_labels'] = torch.nn.functional.one_hot(results['class_labels'], num_classes=4)
+            results['mask_labels'] = results['mask_labels'][0].unsqueeze(0)
             yield results
 
 #potentially just use processor to modify the outputs to pass to model? just get text encodings 
