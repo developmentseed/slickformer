@@ -20,10 +20,9 @@ docker build -t slickserver .
 ```
 Don't use `--gpus all` if you're doing this on a machine without a GPU. and Omit the transformers line if not editing transformers lib
 ```
- docker run -it --rm \
+docker run -it --rm \
     -v $HOME/.aws:/root/.aws \
     -v "$(pwd)":/home/work/slickformer \
-    -v "$(pwd)/../transformers":/home/work/transformers \
     -p 8888:8888 \
     -e AWS_PROFILE=devseed \
     --gpus all slickserver
