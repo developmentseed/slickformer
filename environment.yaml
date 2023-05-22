@@ -1,12 +1,12 @@
 name: slickformer
 channels:
     - conda-forge
-    - pytorch
-    - nvidia
+    - nodefaults
 dependencies:
     - albumentations
     - black
     - boto3
+    - cython>=0.27.3
     - dask
     - distributed
     - fastapi
@@ -24,8 +24,8 @@ dependencies:
     - opencv
     - pandas
     - pip
+    - pycocotools
     - python-graphviz
-    - pytorch-cuda==11.7
     - pysal
     - pystac-client
     - rasterio
@@ -41,13 +41,11 @@ dependencies:
     - transformers
     - xbatcher
     - zen3geo
+    - lightning>=2.0
+    - pytorch>=2.0
+    - torchdata>=0.6
+    - torchvision
     - pip:
-        - git+https://github.com/cocodataset/panopticapi.git@7bb4655548f98f3fedc07bf37e9040a992b054b0
-        - git+https://github.com/waspinator/pycococreator.git@0.2.1
         - rio-cogeo
         - rio-tiler-pds
-        - torch==2.0
-        - pytorch-lightning==2.0
-        - torchdata==0.6
-        - torchvision
         - global-land-mask

@@ -25,6 +25,7 @@ docker run -it --rm \
     -v "$(pwd)":/home/work/slickformer \
     -p 8888:8888 \
     -e AWS_PROFILE=devseed \
+    --ipc=host \
     --gpus all slickserver
 ```
 

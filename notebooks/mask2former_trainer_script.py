@@ -5,19 +5,12 @@ import warnings
 import numpy as np
 import torch
 import torch.nn as nn  # PyTorch Lightning NN (neural network) module
-import torch.nn.functional as F
 import torchvision
-from torch.utils.data import DataLoader, default_collate
-import torch.optim as optim 
-from torchdata.dataloader2 import DataLoader2
+from torch.utils.data import DataLoader
 import torchdata
-import pytorch_lightning as pl
-from pytorch_lightning.callbacks import DeviceStatsMonitor
-from ceruleanml import plot
-from ceruleanml import evaluation
+import lightning as L
 from ceruleanml.data_pipeline import put_image_in_dict, get_src_pths_annotations
 from transformers import Mask2FormerForUniversalSegmentation, Mask2FormerConfig
-import skimage.io as skio
 import os
 #for debugging
 # os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
@@ -26,16 +19,17 @@ if not sys.warnoptions:
 # Set the random seed
 seed=0 # we need to set this for torch datapipe separately
 random.seed(seed)
+torch.set_float32_matmul_precision('medium') # if you have tensor cores
 
 # %% [markdown]
 # Loading the train and validation set
 
 # %%
-train_dir = "../data/partitions/train_tiles_context_0/"
+train_dir = "/home/work/slickformer/data/partitions/train_tiles_context_0/"
 train_imgs, train_annotations = get_src_pths_annotations(train_dir)
-val_dir = "../data/partitions/val_tiles_context_0/"
+val_dir = "/home/work/slickformer/data/partitions/val_tiles_context_0/"
 val_imgs, val_annotations = get_src_pths_annotations(val_dir)
-test_dir = "../data/partitions/test_tiles_context_0/"
+test_dir = "/home/work/slickformer/data/partitions/test_tiles_context_0/"
 
 # %% [markdown]
 # Setting up the datapipes
@@ -81,7 +75,7 @@ def collate_fn(batch):
     return {"pixel_values": pixel_values, "pixel_mask": pixel_mask, "class_labels": class_labels, "mask_labels": mask_labels}
 
 
-class Mask2FormerDataModule(pl.LightningDataModule):
+class Mask2FormerDataModule(L.LightningDataModule):
     def __init__(self, config_path, train_dir, val_dir, test_dir, batch_size, num_workers, crop_size=512):
         super().__init__()
         self.train_dir, self.val_dir, self.test_dir = train_dir, val_dir, test_dir
@@ -192,21 +186,21 @@ class Mask2FormerDataModule(pl.LightningDataModule):
         plt.tight_layout()
 
     def train_dataloader(self):
-        return DataLoader(dataset=self.train_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
+        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=self.train_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
 
     def val_dataloader(self):
-        return DataLoader(dataset=self.val_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
+        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=self.val_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
 
     def test_dataloader(self):
-        return DataLoader(dataset=self.test_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
+        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=self.test_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
 
     def predict_dataloader(self):
-        return DataLoader(dataset=self.test_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
+        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=self.test_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
 
 # %%
-data_config_path= "../custom_processors/preprocessor_config.json"
-onef_dm = Mask2FormerDataModule(data_config_path, train_dir, val_dir, test_dir, batch_size=1, num_workers=os.cpu_count(), crop_size=1024)
-
+data_config_path= "/home/work/slickformer/custom_processors/preprocessor_config.json"
+onef_dm = Mask2FormerDataModule(data_config_path, train_dir, val_dir, test_dir, batch_size=10, num_workers=os.cpu_count() - 1, crop_size=512)
+# 10 i slimit for 24 Gb gpu memory and 512 crop size
 # %%
 onef_dm.setup(stage="train") #what's the purpose of stage?
 
@@ -235,7 +229,7 @@ class Backbone(nn.Module):
     def forward(self, xb):
         return self.backbone(xb)
 
-class Mask2FormerLightningModel(pl.LightningModule):
+class Mask2FormerLightningModel(L.LightningModule):
     def __init__(
         self,
         config_path,
@@ -284,17 +278,23 @@ class Mask2FormerLightningModel(pl.LightningModule):
         self.log("tst_loss", loss, prog_bar=True, logger=True)
 
 # %%
-from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
+from lightning.pytorch.loggers import TensorBoardLogger
+from lightning.pytorch.profilers import AdvancedProfile, SimpleProfiler
 
-# %%
-trainer = Trainer(
-    max_epochs = 1,
+profiler = SimpleProfiler(dirpath=".", filename="perf_logs")
+logger = TensorBoardLogger("tb_logs", name="my_model")
+
+trainer = L.Trainer(
+    max_epochs = 5,
     accelerator="auto",
     devices = 1 if torch.cuda.is_available else None,
+    logger=logger,
+    profiler=profiler
+    # deterministic=True # can't set this when using cuda
 )
 
 # %%
-model_config_path= "../custom_models/config.json"
+model_config_path= "/home/work/slickformer/custom_models/config.json"
 model = Mask2FormerLightningModel(model_config_path)
 
 # %% [markdown]
@@ -302,7 +302,7 @@ model = Mask2FormerLightningModel(model_config_path)
 
 # %%
 trainer.fit(model, datamodule=onef_dm)
-
+print(profiler.summary())
 # %%
 # from transformers import  AutoImageProcessor, MaskFormerForInstanceSegmentation
 # image_processor = AutoImageProcessor.from_pretrained("facebook/maskformer-swin-base-coco", num_labels=3)

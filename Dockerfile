@@ -42,7 +42,7 @@ RUN wget https://github.com/conda-forge/miniforge/releases/latest/download/Mamba
     && echo 'export PATH="/home/$USERNAME/mambaforge/bin:$PATH"' >> ~/.bashrc
 
 # Install Conda packages for jupyter server
-RUN mamba install -n base -c conda-forge jupyterlab_widgets jupyterlab nb_conda_kernels ipywidgets black isort -y
+RUN mamba install -n base -c conda-forge jupyterlab_widgets jupytext jupyterlab nb_conda_kernels ipywidgets black isort -y
 
 ##### Install custom Conda packages
 
@@ -76,6 +76,8 @@ COPY ceruleanml /home/$USERNAME/slickformer
 COPY setup.py /home/$USERNAME/slickformer
 COPY scripts/download_models_and_configs.py /home/$USERNAME/slickformer
 RUN conda run -n slickformer pip install -e .
+RUN pip install --no-deps git+https://github.com/cocodataset/panopticapi.git@7bb4655548f98f3fedc07bf37e9040a992b054b0 && \
+pip install --no-deps git+https://github.com/waspinator/pycococreator.git@0.2.1
 
 # so we can activate envs in vscode remote container connection
 RUN conda init
