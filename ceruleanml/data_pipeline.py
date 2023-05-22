@@ -155,6 +155,34 @@ class DecodeMasks(IterDataPipe):
                         annos.update({'masks':mask_arrs, 'labels':labels, "image_name": anno['big_image_original_fname']})
                 yield annos
 
+@functional_datapipe("read_masks")
+class ReadMasks(IterDataPipe):
+    """reads mask based on scene and annotation metadata.
+
+    Args:
+        scene_id (dict): A scene_id in annotations['images']. assumes working from full S1 imagery.
+        annotations (dict): the COCO JSON dict
+
+    Returns:
+        tuple: Tuple of list of mask arrays and annotation metadata, including RLE compressed masks
+    """
+    def __init__(self, label_dp, mask_dir, **kwargs):
+        self.label_dp = label_dp
+        self.kwargs = kwargs
+        self.mask_dir = mask_dir
+
+    def __iter__(self):
+        for annotations in self.label_dp:
+            for im_record in annotations['images']:
+                labels = []
+                annos = {}
+                mask_arrs = list(skio.imread(os.path.join(self.mask_dir, im_record['big_image_original_fname'][:-4])+"_mask.tif").transpose((2,0,1)))
+                for anno in annotations['annotations']:
+                    if im_record['id'] == anno['image_id']: #TODO assumes this only happens once, which it should
+                        # from the source, order is height then width https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocotools/_mask.pyx#L288
+                        labels.append(anno['category_id'])
+                        annos.update({'masks':mask_arrs, 'labels':labels, "image_name": anno['big_image_original_fname']})
+                yield annos
 
 @functional_datapipe("random_crop_mask_if_exists")
 class RandomCropByMasks(IterDataPipe):
