@@ -155,6 +155,7 @@ class DecodeMasks(IterDataPipe):
                         annos.update({'masks':mask_arrs, 'labels':labels, "image_name": anno['big_image_original_fname']})
                 yield annos
 
+
 @functional_datapipe("random_crop_mask_if_exists")
 class RandomCropByMasks(IterDataPipe):
     #https://albumentations.ai/docs/getting_started/mask_augmentation/
