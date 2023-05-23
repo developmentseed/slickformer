@@ -1,4 +1,3 @@
-# %%
 import sys
 import random
 import warnings
@@ -21,20 +20,16 @@ seed=0 # we need to set this for torch datapipe separately
 random.seed(seed)
 torch.set_float32_matmul_precision('medium') # if you have tensor cores
 
-# %% [markdown]
 # Loading the train and validation set
 
-# %%
 train_dir = "/home/work/slickformer/data/partitions/train_tiles_context_0/"
 train_imgs, train_annotations = get_src_pths_annotations(train_dir)
 val_dir = "/home/work/slickformer/data/partitions/val_tiles_context_0/"
 val_imgs, val_annotations = get_src_pths_annotations(val_dir)
 test_dir = "/home/work/slickformer/data/partitions/test_tiles_context_0/"
 
-# %% [markdown]
 # Setting up the datapipes
 
-# %%
 train_i_coco_pipe = torchdata.datapipes.iter.IterableWrapper(iterable=[train_annotations])
 train_l_coco_pipe = torchdata.datapipes.iter.IterableWrapper(iterable=[train_annotations])
 train_source_pipe_processed = (
@@ -42,29 +37,33 @@ train_source_pipe_processed = (
     .read_tiff()
 )
 
-# %%
 train_labels_pipe_processed = (
     train_l_coco_pipe.decode_masks()
 )
 
-# %% [markdown]
+# %%time
+next(iter(train_labels_pipe_processed))
+
+train_labels_pipe_processed = (
+    train_l_coco_pipe.read_masks("/home/work/slickformer/data/partitions/train_tiles_context_0/tiled_masks")
+)
+
+# %%time
+next(iter(train_labels_pipe_processed))
+
 # We'll train on random crops of masks to focus on the most informative parts of scene for more efficient training.
 
-# %%
 train_dp = (
     train_source_pipe_processed.zip(train_labels_pipe_processed)
     .random_crop_mask_if_exists(512,512)
     .channel_first_norm_to_tensor()
-    .remap_remove()
 )
 
-# %%
 torchdata.datapipes.utils.to_graph(dp=train_dp)
 
-# %% [markdown]
 # Putting datapipes in a pytorch-lightning DataModule
 
-# %%
+# +
 import matplotlib.pyplot as plt
 
 def collate_fn(batch):
@@ -186,35 +185,80 @@ class Mask2FormerDataModule(L.LightningDataModule):
         plt.tight_layout()
 
     def train_dataloader(self):
-        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=self.train_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
+        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=self.train_dp.m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
 
     def val_dataloader(self):
-        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=self.val_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
+        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=self.val_dp.m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
 
     def test_dataloader(self):
-        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=self.test_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
+        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=self.test_dp.m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
 
     def predict_dataloader(self):
-        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=self.test_dp.remap_remove().m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
+        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=self.test_dp.m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
 
-# %%
+
+# -
+
 data_config_path= "/home/work/slickformer/custom_processors/preprocessor_config.json"
 onef_dm = Mask2FormerDataModule(data_config_path, train_dir, val_dir, test_dir, batch_size=10, num_workers=os.cpu_count() - 1, crop_size=512)
-# 10 i slimit for 24 Gb gpu memory and 512 crop size
-# %%
+# 10 is limit for 24 Gb gpu memory and 512 crop size
+train_dp_batch = train_dp.remap_remove().m2fprocessor(data_config_path).batch(10).map(collate_fn)
+
+# +
+# %%time
+
+x = next(iter(train_dp.remap_remove().m2fprocessor(data_config_path)))
+
+# +
+# %%time
+
+x=next(iter(train_dp.remap_remove()))
+
+# +
+# %%time
+
+for i in train_dp_batch:
+    pass
+
+# +
+# %%time
+
+x = next(iter(train_labels_pipe_processed))
+# -
+
+x
+
+from tifffile import imwrite
+masks_dir = "./tiled_masks"
+for i in train_labels_pipe_processed:
+    save_masks_to_tiff(i['masks'], masks_dir, i['image_name'])
+
+
+# Function to save the masks
+def save_masks_to_tiff(masks, masks_dir, image_name):
+    mask_stack = np.stack(masks, axis=-1)  # stack along the channel axis
+    mask_path = os.path.join(masks_dir, f"{image_name[-4:]}_mask.tif")
+    imwrite(mask_path, mask_stack)
+
+
+
+pth = 'S1A_IW_GRDH_1SDV_20200729T021511_20200729T021536_033663_03E6CA_2CFE.tif'
+
+pth[-4:]
+
 onef_dm.setup(stage="train") #what's the purpose of stage?
 
-# %%
+# +
 from matplotlib.ticker import MaxNLocator, FuncFormatter
 
 onef_dm.show_batch(0)
+# -
 
-# %%
 for i in onef_dm.train_dataloader():
     i
     break
 
-# %%
+# +
 from transformers import AdamW
 class Backbone(nn.Module):
     def __init__(
@@ -277,7 +321,7 @@ class Mask2FormerLightningModel(L.LightningModule):
         loss, score = self.one_step(batch)
         self.log("tst_loss", loss, prog_bar=True, logger=True)
 
-# %%
+# +
 from lightning.pytorch.loggers import TensorBoardLogger
 from lightning.pytorch.profilers import AdvancedProfile, SimpleProfiler
 
@@ -292,18 +336,16 @@ trainer = L.Trainer(
     profiler=profiler
     # deterministic=True # can't set this when using cuda
 )
+# -
 
-# %%
 model_config_path= "/home/work/slickformer/custom_models/config.json"
 model = Mask2FormerLightningModel(model_config_path)
 
-# %% [markdown]
 # need to run this in terminal because for some reason created dirs are owned by root even though docker container built for user 1000
 
-# %%
 trainer.fit(model, datamodule=onef_dm)
 print(profiler.summary())
-# %%
+# +
 # from transformers import  AutoImageProcessor, MaskFormerForInstanceSegmentation
 # image_processor = AutoImageProcessor.from_pretrained("facebook/maskformer-swin-base-coco", num_labels=3)
 # instance_inputs = image_processor(images=data['image'], return_tensors="pt")
