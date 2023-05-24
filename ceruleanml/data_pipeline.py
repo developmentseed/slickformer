@@ -284,9 +284,11 @@ class Mask2FormerProcessorDP(IterDataPipe):
             # https://pyimagesearch.com/2023/03/13/train-a-maskformer-segmentation-model-with-hugging-face-transformers/
             # we use pixel wise class annotations as input
             # need to use instance masks
+            sample_dict['masks'] = [torch.from_numpy(mask) for mask in sample_dict['masks']]
+            sample_dict['boxes'] = [torch.from_numpy(mask) for mask in sample_dict['boxes']]
             if all_arrays_equal(sample_dict['masks']): #TODO hack to get rid of duplicate masks
                 sample_dict['masks'] = sample_dict['masks'][0].unsqueeze(0)
-                sample_dict['labels'] = sample_dict['labels'][0].unsqueeze(0)
+                sample_dict['labels'] = torch.tensor(sample_dict['labels'][0], dtype=torch.uint8).unsqueeze(0)
             instance_mask, instance_id_to_semantic_id = masks_to_instance_mask_and_dict(sample_dict['masks'], sample_dict['labels'])
             assert len(np.unique(instance_mask)) > 1
             inputs = self.processor(images=[sample_dict['image']], segmentation_maps=[instance_mask], instance_id_to_semantic_id= instance_id_to_semantic_id, task_inputs=["panoptic"], return_tensors="pt")
