@@ -7,12 +7,13 @@ import torch.nn as nn  # PyTorch Lightning NN (neural network) module
 import torchvision
 from torch.utils.data import DataLoader
 import torchdata
+from torchdata.dataloader2 import DataLoader2, MultiProcessingReadingService
 import lightning as L
 from ceruleanml.data_pipeline import put_image_in_dict, get_src_pths_annotations
 from transformers import Mask2FormerForUniversalSegmentation, Mask2FormerConfig
 import os
 #for debugging
-# os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 if not sys.warnoptions:
     warnings.simplefilter("ignore")
 # Set the random seed
@@ -32,40 +33,14 @@ test_dir = "/home/work/slickformer/data/partitions/test_tiles_context_0/"
 
 train_i_coco_pipe = torchdata.datapipes.iter.IterableWrapper(iterable=[train_annotations])
 train_l_coco_pipe = torchdata.datapipes.iter.IterableWrapper(iterable=[train_annotations])
-train_source_pipe_processed = (
-    train_i_coco_pipe.get_scene_paths(train_dir)  # get source items from the collection
-    .read_tiff()
-)
-
-train_labels_pipe_processed = (
-    train_l_coco_pipe.decode_masks()
-)
-
-# %%time
-next(iter(train_labels_pipe_processed))
 
 # We'll train on random crops of masks to focus on the most informative parts of scene for more efficient training.
 
-train_dp = (
-    train_source_pipe_processed.zip(train_labels_pipe_processed)
-    .random_crop_mask_if_exists(512,512)
-    .channel_first_norm_to_tensor()
-)
-
-torchdata.datapipes.utils.to_graph(dp=train_dp)
 
 # Putting datapipes in a pytorch-lightning DataModule
 
 # +
 import matplotlib.pyplot as plt
-
-def collate_fn(batch):
-    pixel_values = torch.stack([example["pixel_values"] for example in batch])
-    pixel_mask = torch.stack([example["pixel_mask"] for example in batch])
-    class_labels = [example["class_labels"] for example in batch]
-    mask_labels = [example["mask_labels"] for example in batch]
-    return {"pixel_values": pixel_values, "pixel_mask": pixel_mask, "class_labels": class_labels, "mask_labels": mask_labels}
-
 
 class Mask2FormerDataModule(L.LightningDataModule):
     def __init__(self, config_path, train_dir, val_dir, test_dir, batch_size, num_workers, crop_size=512):
@@ -93,6 +68,7 @@ class Mask2FormerDataModule(L.LightningDataModule):
                 .random_crop_mask_if_exists(self.crop_size, self.crop_size)
                 .channel_first_norm_to_tensor()
                 .remap_remove()
+                .stack_to_tensor()
             )
             # TODO if val processing mirrors train processing, this could be factored out to a func
             val_imgs, val_annotations = get_src_pths_annotations(self.val_dir)
@@ -110,6 +86,7 @@ class Mask2FormerDataModule(L.LightningDataModule):
                 .random_crop_mask_if_exists(self.crop_size,self.crop_size)
                 .channel_first_norm_to_tensor()
                 .remap_remove()
+                .stack_to_tensor()
             )
 
             test_imgs, test_annotations = get_src_pths_annotations(self.test_dir)
@@ -128,6 +105,7 @@ class Mask2FormerDataModule(L.LightningDataModule):
             .combine_src_label_dicts() # we don't crop for the test set TODO, do we also not crop for validation?
             .channel_first_norm_to_tensor()
             .remap_remove()
+            .stack_to_tensor()
             )
 
     def graph_dp(self):
@@ -178,43 +156,27 @@ class Mask2FormerDataModule(L.LightningDataModule):
         plt.tight_layout()
 
     def train_dataloader(self):
-        train_dp_batched, _ = self.train_dp.m2fprocessor(self.config_path).batch(self.bs).map(collate_fn).random_split(total_length=304, weights={'train':10,'valid':294}, seed =0)
-        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=train_dp_batched, batch_size=None)
+        train_dp = self.train_dp.m2fprocessor(self.config_path)
+        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=train_dp, batch_size=self.bs)
 
     def val_dataloader(self):
-        val_dp_batched, _  = self.val_dp.m2fprocessor(self.config_path).batch(self.bs).map(collate_fn).random_split(total_length=304, weights={'train':10,'valid':294}, seed =0)
-        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=val_dp_batched, batch_size=None)
+        val_dp  = self.val_dp.m2fprocessor(self.config_path)
+        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=val_dp, batch_size=self.bs)
 
     def test_dataloader(self):
-        test_dp_batched = self.test_dp.m2fprocessor(self.config_path).batch(self.bs).map(collate_fn)
-        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=test_dp_batched, batch_size=None)
+        test_dp = self.test_dp.m2fprocessor(self.config_path)
+        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=test_dp, batch_size=self.bs)
 
     def predict_dataloader(self):
-        test_dp_batched = self.test_dp.m2fprocessor(self.config_path).batch(self.bs).map(collate_fn)
-        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=test_dp_batched, batch_size=None)
+        test_dp = self.test_dp.m2fprocessor(self.config_path)
+        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=test_dp, batch_size=self.bs)
 
 
-# -
-
+# +
 data_config_path= "/home/work/slickformer/custom_processors/preprocessor_config.json"
-onef_dm = Mask2FormerDataModule(data_config_path, train_dir, val_dir, test_dir, batch_size=4, num_workers=os.cpu_count() - 1, crop_size=512)
+onef_dm = Mask2FormerDataModule(data_config_path, train_dir, val_dir, test_dir, batch_size=1, num_workers=os.cpu_count() - 1, crop_size=512)
+onef_dm.setup(stage="train") #what's the purpose of stage?
 # 10 is limit for 24 Gb gpu memory and 512 crop size
-train_dp_batched, _ = train_dp.m2fprocessor(data_config_path).batch(4).map(collate_fn).random_split(total_length=304, weights={'train':10,'valid':294},seed =0)
-
-# +
-# %%time
-
-x = next(iter(train_dp_batched))
-# -
-
-# for some reason this errors after batch.... might want to go back to long iteration over all batches commit.  doe sthis happen with random split?
-
-# +
-# %%time
-
-for i in train_dp_batched:
-    pass
-# -
 
 onef_dm.setup(stage="train") #what's the purpose of stage?
 
@@ -298,7 +260,8 @@ trainer = L.Trainer(
     accelerator="auto",
     devices = 1 if torch.cuda.is_available else None,
     logger=logger,
-    profiler=profiler
+    profiler=profiler,
+    fast_dev_run=True
     # deterministic=True # can't set this when using cuda
 )
 # -
@@ -310,73 +273,5 @@ model = Mask2FormerLightningModel(model_config_path)
 
 trainer.fit(model, datamodule=onef_dm)
 print(profiler.summary())
-# +
-# from transformers import  AutoImageProcessor, MaskFormerForInstanceSegmentation
-# image_processor = AutoImageProcessor.from_pretrained("facebook/maskformer-swin-base-coco", num_labels=3)
-# instance_inputs = image_processor(images=data['image'], return_tensors="pt")
-# for k,v in instance_inputs.items():
-#   print(k,v.shape)
-
-
-# from collections import defaultdict
-# import matplotlib.pyplot as plt
-# from matplotlib import cm
-# import matplotlib.patches as mpatches
-
-# def draw_panoptic_segmentation(segmentation, segments_info):
-#     # get the used color map
-#     viridis = cm.get_cmap('viridis', torch.max(segmentation))
-#     fig, ax = plt.subplots()
-#     ax.imshow(segmentation)
-#     instances_counter = defaultdict(int)
-#     handles = []
-#     # for each segment, draw its legend
-#     for segment in segments_info:
-#         segment_id = segment['id']
-#         segment_label_id = segment['label_id']
-#         segment_label = model.config.id2label[segment_label_id]
-#         label = f"{segment_label}-{instances_counter[segment_label_id]}"
-#         instances_counter[segment_label_id] += 1
-#         color = viridis(segment_id)
-#         handles.append(mpatches.Patch(color=color, label=label))
-        
-#     ax.legend(handles=handles)
-#     plt.savefig('cats_panoptic.png')
-
-# draw_panoptic_segmentation(**panoptic_segmentation)
-
-# # %%
-
-
-# # %%
-
-
-# # %%
-
-
-# # %%
-
-
-# # %%
-
-
-# # %% [markdown]
-# # Groundtruth datapipe with non cropped images. We will use these for inference with the trained model.
-
-# # %%
-# gt_train_dp = (train_dp
-#                     .map(evaluation.remap_gt_dict)
-#                     .map(evaluation.stack_boxes)
-# )
-
-# # %%
-# from torchmetrics import detection
-
-# m = detection.mean_ap.MeanAveragePrecision(box_format='xyxy', iou_type='bbox', iou_thresholds=[.5], rec_thresholds=None, max_detection_thresholds=None, class_metrics=True)
-
-# m.update(preds=[pred_dict_thresholded_nms], target=[test_sample])
-
-# from pprint import pprint
-# pprint(m.compute())
 
 

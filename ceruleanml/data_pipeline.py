@@ -219,6 +219,18 @@ class RemapAndRemoveAmbiguous(IterDataPipe):
             gt_dict['masks'] = list(compress(gt_dict['masks'], is_not_none))
             gt_dict['boxes'] = list(compress(gt_dict['boxes'], is_not_none))
             gt_dict['masks'] = [(mask > 0) * remapped_labels[i] for i, mask in enumerate(gt_dict['masks'])]
+            yield gt_dict
+
+@functional_datapipe("stack_to_tensor")
+class StackConvertLabelsToTensor(IterDataPipe):
+    #https://albumentations.ai/docs/getting_started/mask_augmentation/
+    def __init__(self, sample_dicts, **kwargs):
+        self.sample_dicts =  sample_dicts
+        self.kwargs = kwargs
+    def __iter__(self):  
+        for gt_dict in self.sample_dicts:
+            remapped_labels = np.array([three_class_remap(l) for l in gt_dict['labels']])
+            is_not_none = [np.logical_not(np.isnan(l)) for l in remapped_labels]
             if np.all(is_not_none) and len(remapped_labels) > 0:
                 assert gt_dict['labels'] is not []
                 assert gt_dict['masks'] is not []
@@ -284,11 +296,11 @@ class Mask2FormerProcessorDP(IterDataPipe):
             # https://pyimagesearch.com/2023/03/13/train-a-maskformer-segmentation-model-with-hugging-face-transformers/
             # we use pixel wise class annotations as input
             # need to use instance masks
-            sample_dict['masks'] = [torch.from_numpy(mask) for mask in sample_dict['masks']]
-            sample_dict['boxes'] = [torch.from_numpy(mask) for mask in sample_dict['boxes']]
+            sample_dict['masks'] = [mask for mask in sample_dict['masks']]
+            sample_dict['boxes'] = [mask for mask in sample_dict['boxes']]
             if all_arrays_equal(sample_dict['masks']): #TODO hack to get rid of duplicate masks
                 sample_dict['masks'] = sample_dict['masks'][0].unsqueeze(0)
-                sample_dict['labels'] = torch.tensor(sample_dict['labels'][0], dtype=torch.uint8).unsqueeze(0)
+                sample_dict['labels'] = sample_dict['labels'][0].unsqueeze(0)
             instance_mask, instance_id_to_semantic_id = masks_to_instance_mask_and_dict(sample_dict['masks'], sample_dict['labels'])
             assert len(np.unique(instance_mask)) > 1
             inputs = self.processor(images=[sample_dict['image']], segmentation_maps=[instance_mask], instance_id_to_semantic_id= instance_id_to_semantic_id, task_inputs=["panoptic"], return_tensors="pt")
