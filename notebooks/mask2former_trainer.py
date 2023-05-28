@@ -44,13 +44,6 @@ train_labels_pipe_processed = (
 # %%time
 next(iter(train_labels_pipe_processed))
 
-train_labels_pipe_processed = (
-    train_l_coco_pipe.read_masks("/home/work/slickformer/data/partitions/train_tiles_context_0/tiled_masks")
-)
-
-# %%time
-next(iter(train_labels_pipe_processed))
-
 # We'll train on random crops of masks to focus on the most informative parts of scene for more efficient training.
 
 train_dp = (
@@ -185,66 +178,43 @@ class Mask2FormerDataModule(L.LightningDataModule):
         plt.tight_layout()
 
     def train_dataloader(self):
-        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=self.train_dp.m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
+        train_dp_batched, _ = self.train_dp.m2fprocessor(self.config_path).batch(self.bs).map(collate_fn).random_split(total_length=304, weights={'train':10,'valid':294}, seed =0)
+        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=train_dp_batched, batch_size=None)
 
     def val_dataloader(self):
-        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=self.val_dp.m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
+        val_dp_batched, _  = self.val_dp.m2fprocessor(self.config_path).batch(self.bs).map(collate_fn).random_split(total_length=304, weights={'train':10,'valid':294}, seed =0)
+        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=val_dp_batched, batch_size=None)
 
     def test_dataloader(self):
-        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=self.test_dp.m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
+        test_dp_batched = self.test_dp.m2fprocessor(self.config_path).batch(self.bs).map(collate_fn)
+        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=test_dp_batched, batch_size=None)
 
     def predict_dataloader(self):
-        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=self.test_dp.m2fprocessor(self.config_path).batch(self.bs).map(collate_fn), batch_size=None)
+        test_dp_batched = self.test_dp.m2fprocessor(self.config_path).batch(self.bs).map(collate_fn)
+        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=test_dp_batched, batch_size=None)
 
 
 # -
 
 data_config_path= "/home/work/slickformer/custom_processors/preprocessor_config.json"
-onef_dm = Mask2FormerDataModule(data_config_path, train_dir, val_dir, test_dir, batch_size=10, num_workers=os.cpu_count() - 1, crop_size=512)
+onef_dm = Mask2FormerDataModule(data_config_path, train_dir, val_dir, test_dir, batch_size=4, num_workers=os.cpu_count() - 1, crop_size=512)
 # 10 is limit for 24 Gb gpu memory and 512 crop size
-train_dp_batch = train_dp.remap_remove().m2fprocessor(data_config_path).batch(10).map(collate_fn)
+train_dp_batched, _ = train_dp.m2fprocessor(data_config_path).batch(4).map(collate_fn).random_split(total_length=304, weights={'train':10,'valid':294},seed =0)
 
 # +
 # %%time
 
-x = next(iter(train_dp.remap_remove().m2fprocessor(data_config_path)))
-
-# +
-# %%time
-
-x=next(iter(train_dp.remap_remove()))
-
-# +
-# %%time
-
-for i in train_dp_batch:
-    pass
-
-# +
-# %%time
-
-x = next(iter(train_labels_pipe_processed))
+x = next(iter(train_dp_batched))
 # -
 
-x
+# for some reason this errors after batch.... might want to go back to long iteration over all batches commit.  doe sthis happen with random split?
 
-from tifffile import imwrite
-masks_dir = "./tiled_masks"
-for i in train_labels_pipe_processed:
-    save_masks_to_tiff(i['masks'], masks_dir, i['image_name'])
+# +
+# %%time
 
-
-# Function to save the masks
-def save_masks_to_tiff(masks, masks_dir, image_name):
-    mask_stack = np.stack(masks, axis=-1)  # stack along the channel axis
-    mask_path = os.path.join(masks_dir, f"{image_name[-4:]}_mask.tif")
-    imwrite(mask_path, mask_stack)
-
-
-
-pth = 'S1A_IW_GRDH_1SDV_20200729T021511_20200729T021536_033663_03E6CA_2CFE.tif'
-
-pth[-4:]
+for i in train_dp_batched:
+    pass
+# -
 
 onef_dm.setup(stage="train") #what's the purpose of stage?
 
@@ -252,11 +222,6 @@ onef_dm.setup(stage="train") #what's the purpose of stage?
 from matplotlib.ticker import MaxNLocator, FuncFormatter
 
 onef_dm.show_batch(0)
-# -
-
-for i in onef_dm.train_dataloader():
-    i
-    break
 
 # +
 from transformers import AdamW
@@ -323,7 +288,7 @@ class Mask2FormerLightningModel(L.LightningModule):
 
 # +
 from lightning.pytorch.loggers import TensorBoardLogger
-from lightning.pytorch.profilers import AdvancedProfile, SimpleProfiler
+from lightning.pytorch.profilers import SimpleProfiler
 
 profiler = SimpleProfiler(dirpath=".", filename="perf_logs")
 logger = TensorBoardLogger("tb_logs", name="my_model")
