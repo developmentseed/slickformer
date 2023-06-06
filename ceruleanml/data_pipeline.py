@@ -226,7 +226,7 @@ class RemapAndRemoveAmbiguous(IterDataPipe):
     def __iter__(self):
         """Removes samples with the ambgiuous class and empty samples"""
         for gt_dict in self.sample_dicts:
-            if gt_dict['image_name'] == 'S1A_IW_GRDH_1SDV_20210827T001554_20210827T001619_039408_04A7B9_21A5.tif':
+            if gt_dict['image_name'] == 'S1B_IW_GRDH_1SDV_20201003T103242_20201003T103307_023647_02CEE1_C9E1.tif':
                 print("this has empty masks but shouldn't at some point before masks_to...")
             # TODO we are filtering out negative samples here, but good to experiment to include
             remapped_labels = np.array([three_class_remap(l) for l in gt_dict['labels']])
@@ -316,7 +316,7 @@ class Mask2FormerProcessorDP(IterDataPipe):
             # need to use instance masks
             # if sample_dict['image_name'] == 'S1A_IW_GRDH_1SDV_20200905T143719_20200905T143744_034225_03FA12_7661.tif':
             #     print("the masks to isntance mask function used to? break this and sets values below 2 to ")
-            if sample_dict['image_name'] == 'S1A_IW_GRDH_1SDV_20210827T001554_20210827T001619_039408_04A7B9_21A5.tif':
+            if sample_dict['image_name'] == 'S1B_IW_GRDH_1SDV_20201003T103242_20201003T103307_023647_02CEE1_C9E1.tif':
                 print("this has empty masks but shouldn't at some point before masks_to...")
             sample_dict['masks'] = [mask for mask in sample_dict['masks']]
             sample_dict['boxes'] = [mask for mask in sample_dict['boxes']]
