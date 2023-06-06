@@ -13,6 +13,18 @@ import json
 from transformers import AutoImageProcessor
 from itertools import compress
 
+
+def is_int_like(var):
+    int_types = (int, np.int8, np.int16, np.int32, np.int64, np.uint8, np.uint16, np.uint32, np.uint64)
+    torch_int_types = (torch.int8, torch.int16, torch.int32, torch.int64)
+
+    if isinstance(var, int_types):
+        return True
+    elif torch.is_tensor(var) and var.dtype in torch_int_types:
+        return True
+    raise ValueError(f"{var} of type {type(var)} is not an int and can't be used as a class label.")
+
+
 def three_class_remap(class_id):
     """
     Remap 6 classes from the class_dict to more simple categories. So we go from this
@@ -32,6 +44,7 @@ def three_class_remap(class_id):
     {'supercategory': 'slick', 'id': 2, 'name': 'natural_seep'},
     {'supercategory': 'slick', 'id': 3, 'name': 'coincident_vessel'}]
     """
+    assert is_int_like(class_id)
     assert class_id != 0 # annotations should not be background class
     if class_id == 1 or class_id ==2:
         return class_id
@@ -95,7 +108,7 @@ def stack_tensors(gdict):
 
 def put_image_in_dict(image):
     pdict = {}
-    pdict['image'] = image 
+    pdict['image'] = image
     return pdict
 
 
@@ -212,14 +225,19 @@ class RemapAndRemoveAmbiguous(IterDataPipe):
         self.kwargs = kwargs
     def __iter__(self):
         """Removes samples with the ambgiuous class and empty samples"""
-        for gt_dict in self.sample_dicts:  
+        for gt_dict in self.sample_dicts:
+            if gt_dict['image_name'] == 'S1A_IW_GRDH_1SDV_20210827T001554_20210827T001619_039408_04A7B9_21A5.tif':
+                print("this has empty masks but shouldn't at some point before masks_to...")
+            # TODO we are filtering out negative samples here, but good to experiment to include
             remapped_labels = np.array([three_class_remap(l) for l in gt_dict['labels']])
             is_not_none = [np.logical_not(np.isnan(l)) for l in remapped_labels]
-            gt_dict['labels'] = list(compress(remapped_labels, is_not_none))
-            gt_dict['masks'] = list(compress(gt_dict['masks'], is_not_none))
-            gt_dict['boxes'] = list(compress(gt_dict['boxes'], is_not_none))
-            gt_dict['masks'] = [(mask > 0) * remapped_labels[i] for i, mask in enumerate(gt_dict['masks'])]
-            yield gt_dict
+            if np.any(is_not_none):
+                gt_dict['labels'] = list(compress(remapped_labels, is_not_none))
+                gt_dict['labels'] = np.array(gt_dict['labels'], dtype=np.int8)
+                gt_dict['masks'] = list(compress(gt_dict['masks'], is_not_none))
+                gt_dict['boxes'] = list(compress(gt_dict['boxes'], is_not_none))
+                gt_dict['masks'] = [(mask > 0) * gt_dict['labels'][i] for i, mask in enumerate(gt_dict['masks'])]
+                yield gt_dict
 
 @functional_datapipe("stack_to_tensor")
 class StackConvertLabelsToTensor(IterDataPipe):
@@ -227,16 +245,13 @@ class StackConvertLabelsToTensor(IterDataPipe):
     def __init__(self, sample_dicts, **kwargs):
         self.sample_dicts =  sample_dicts
         self.kwargs = kwargs
-    def __iter__(self):  
+    def __iter__(self):
         for gt_dict in self.sample_dicts:
-            remapped_labels = np.array([three_class_remap(l) for l in gt_dict['labels']])
-            is_not_none = [np.logical_not(np.isnan(l)) for l in remapped_labels]
-            if np.all(is_not_none) and len(remapped_labels) > 0:
-                assert gt_dict['labels'] is not []
-                assert gt_dict['masks'] is not []
-                assert gt_dict['boxes'] is not []
-                gt_dict = stack_tensors(gt_dict)
-                yield gt_dict
+            assert gt_dict['labels'] is not []
+            assert gt_dict['masks'] is not []
+            assert gt_dict['boxes'] is not []
+            gt_dict = stack_tensors(gt_dict)
+            yield gt_dict
 
 def curried_amax(instance_masks):
     """
@@ -257,8 +272,8 @@ def all_arrays_equal(mask_arrays):
 
     return False
 
-def masks_to_instance_mask_and_dict(mask_arrays, class_ids, starting_instance_id=2):
-    """Instead of squashing instance masks, combines instance masks into an instance mask 
+def masks_to_instance_mask_and_dict(mask_arrays, class_ids, starting_instance_id=1):
+    """Instead of squashing instance masks, combines instance masks into an instance mask
     and return it plus dict mapping instance ids to class ids.
 
     Args:
@@ -272,10 +287,13 @@ def masks_to_instance_mask_and_dict(mask_arrays, class_ids, starting_instance_id
     instance_mask = torch.zeros_like(mask_arrays[0], dtype=torch.int32)
     instance_id_to_semantic_id = {}
 
-    for i, (mask, class_id) in enumerate(zip(mask_arrays, class_ids), start=starting_instance_id):
-        instance_mask[mask > 0] = i
-        instance_id_to_semantic_id[i] = class_id + 1 #hack to deal with processor quirk
-    
+    for i, (mask, class_id) in enumerate(zip(mask_arrays, class_ids)):
+        # this is 1 if there's only 1 instance mask, then 2, etc. count resets per sample.
+        instance_mask[mask > 0] = starting_instance_id + i
+        #TODO is that correct? TODO subsequent instances overwrite others
+        instance_id_to_semantic_id[starting_instance_id + i] = class_id # hack to deal with processor quirk
+    if len(np.unique(instance_mask)) <= 1:
+        print("The mask is empty but shouldn't be")
     if all_arrays_equal(mask_arrays):
         raise ValueError("Masks should not be identical for the same image!")
 
@@ -296,18 +314,23 @@ class Mask2FormerProcessorDP(IterDataPipe):
             # https://pyimagesearch.com/2023/03/13/train-a-maskformer-segmentation-model-with-hugging-face-transformers/
             # we use pixel wise class annotations as input
             # need to use instance masks
+            # if sample_dict['image_name'] == 'S1A_IW_GRDH_1SDV_20200905T143719_20200905T143744_034225_03FA12_7661.tif':
+            #     print("the masks to isntance mask function used to? break this and sets values below 2 to ")
+            if sample_dict['image_name'] == 'S1A_IW_GRDH_1SDV_20210827T001554_20210827T001619_039408_04A7B9_21A5.tif':
+                print("this has empty masks but shouldn't at some point before masks_to...")
             sample_dict['masks'] = [mask for mask in sample_dict['masks']]
             sample_dict['boxes'] = [mask for mask in sample_dict['boxes']]
             if all_arrays_equal(sample_dict['masks']): #TODO hack to get rid of duplicate masks
                 sample_dict['masks'] = sample_dict['masks'][0].unsqueeze(0)
                 sample_dict['labels'] = sample_dict['labels'][0].unsqueeze(0)
             instance_mask, instance_id_to_semantic_id = masks_to_instance_mask_and_dict(sample_dict['masks'], sample_dict['labels'])
-            assert len(np.unique(instance_mask)) > 1
-            inputs = self.processor(images=[sample_dict['image']], segmentation_maps=[instance_mask], instance_id_to_semantic_id= instance_id_to_semantic_id, task_inputs=["panoptic"], return_tensors="pt")
+            if len(np.unique(instance_mask)) <= 1:
+                raise ValueError("The mask is empty but shouldn't be")
+            inputs = self.processor(images=[sample_dict['image']], segmentation_maps=[instance_mask], instance_id_to_semantic_id= instance_id_to_semantic_id, task_inputs=["panoptic"], reduce_labels=False, return_tensors="pt")
             inputs = {k: v.squeeze() if isinstance(v, torch.Tensor) else v[0] for k,v in inputs.items()}
             yield inputs
 
-#potentially just use processor to modify the outputs to pass to model? just get text encodings 
+#potentially just use processor to modify the outputs to pass to model? just get text encodings
 # but yield instance masks and image since encode process converts semantic masks to list of masks anyway
 def extract_bounding_box(mask) -> np.ndarray:
     """Extract the bounding box of a mask.

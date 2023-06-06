@@ -7,13 +7,12 @@ import torch.nn as nn  # PyTorch Lightning NN (neural network) module
 import torchvision
 from torch.utils.data import DataLoader
 import torchdata
-from torchdata.dataloader2 import DataLoader2, MultiProcessingReadingService
 import lightning as L
 from ceruleanml.data_pipeline import put_image_in_dict, get_src_pths_annotations
 from transformers import Mask2FormerForUniversalSegmentation, Mask2FormerConfig
 import os
 #for debugging
-os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+# os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 if not sys.warnoptions:
     warnings.simplefilter("ignore")
 # Set the random seed
@@ -38,6 +37,13 @@ train_l_coco_pipe = torchdata.datapipes.iter.IterableWrapper(iterable=[train_ann
 
 
 # Putting datapipes in a pytorch-lightning DataModule
+def collate_fn(batch):
+    pixel_values = torch.stack([example["pixel_values"] for example in batch])
+    pixel_mask = torch.stack([example["pixel_mask"] for example in batch])
+    class_labels = [example["class_labels"] for example in batch]
+    mask_labels = [example["mask_labels"] for example in batch]
+    return {"pixel_values": pixel_values, "pixel_mask": pixel_mask, "class_labels": class_labels, "mask_labels": mask_labels}
+
 
 # +
 import matplotlib.pyplot as plt
@@ -157,24 +163,24 @@ class Mask2FormerDataModule(L.LightningDataModule):
 
     def train_dataloader(self):
         train_dp = self.train_dp.m2fprocessor(self.config_path)
-        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=train_dp, batch_size=self.bs)
+        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=train_dp, batch_size=self.bs, collate_fn=collate_fn)
 
     def val_dataloader(self):
         val_dp  = self.val_dp.m2fprocessor(self.config_path)
-        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=val_dp, batch_size=self.bs)
+        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=val_dp, batch_size=self.bs, collate_fn=collate_fn)
 
     def test_dataloader(self):
         test_dp = self.test_dp.m2fprocessor(self.config_path)
-        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=test_dp, batch_size=self.bs)
+        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=test_dp, batch_size=self.bs, collate_fn=collate_fn)
 
     def predict_dataloader(self):
         test_dp = self.test_dp.m2fprocessor(self.config_path)
-        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=test_dp, batch_size=self.bs)
+        return DataLoader(num_workers= self.num_workers, pin_memory=True, dataset=test_dp, batch_size=self.bs, collate_fn=collate_fn)
 
 
 # +
 data_config_path= "/home/work/slickformer/custom_processors/preprocessor_config.json"
-onef_dm = Mask2FormerDataModule(data_config_path, train_dir, val_dir, test_dir, batch_size=1, num_workers=os.cpu_count() - 1, crop_size=512)
+onef_dm = Mask2FormerDataModule(data_config_path, train_dir, val_dir, test_dir, batch_size=10, num_workers=os.cpu_count() - 1, crop_size=512)
 onef_dm.setup(stage="train") #what's the purpose of stage?
 # 10 is limit for 24 Gb gpu memory and 512 crop size
 
@@ -250,9 +256,10 @@ class Mask2FormerLightningModel(L.LightningModule):
 
 # +
 from lightning.pytorch.loggers import TensorBoardLogger
-from lightning.pytorch.profilers import SimpleProfiler
+from lightning.pytorch.profilers import SimpleProfiler, AdvancedProfiler
 
 profiler = SimpleProfiler(dirpath=".", filename="perf_logs")
+adv_profiler = AdvancedProfiler(dirpath=".", filename="perf_logs_adv")
 logger = TensorBoardLogger("tb_logs", name="my_model")
 
 trainer = L.Trainer(
@@ -261,7 +268,7 @@ trainer = L.Trainer(
     devices = 1 if torch.cuda.is_available else None,
     logger=logger,
     profiler=profiler,
-    fast_dev_run=True
+    fast_dev_run=False
     # deterministic=True # can't set this when using cuda
 )
 # -
@@ -271,7 +278,17 @@ model = Mask2FormerLightningModel(model_config_path)
 
 # need to run this in terminal because for some reason created dirs are owned by root even though docker container built for user 1000
 
+x = next(iter(onef_dm.train_dp.m2fprocessor(onef_dm.config_path)))
+
+x['mask_labels'].shape
+
+next(iter(onef_dm.train_dataloader()))
+
 trainer.fit(model, datamodule=onef_dm)
+print(profiler.summary())
+
+profiler
+
 print(profiler.summary())
 
 
