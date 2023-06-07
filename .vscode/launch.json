@@ -1,15 +1,16 @@
 {
     "version": "0.2.0",
     "configurations": [
-        {
+        {    "name": "jupyter",
             "jupyter.debugJustMyCode": false,
+            "justMyCode": false,
         },
     {
     "name": "make coco dataset no tile",
     "type": "python",
     "request": "launch",
-    "python": "/root/mambaforge/envs/slickformer/bin/python",
-    "program": "/slickformer/ceruleanml/cli.py",
+    "python": "/home/work/mambaforge/envs/slickformer/bin/python",
+    "program": "/home/work/slickformer/ceruleanml/cli.py",
     "console": "integratedTerminal",
     "justMyCode": false,
     "args": [
@@ -19,6 +20,16 @@
     "/slickformer/data/partitions/test_tiles_context_0",
     "0",
     ]
-    }
+    },
+    {
+        "name": "tmp nb test",
+        "type": "python",
+        "request": "launch",
+        "python": "/home/work/mambaforge/envs/slickformer/bin/python",
+        "program": "${file}",
+        "console": "integratedTerminal",
+        "cwd": "${fileDirname}",
+        "justMyCode": false,
+        }
     ]
     }
